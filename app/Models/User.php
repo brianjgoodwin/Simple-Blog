@@ -40,4 +40,14 @@ class User extends Authenticatable
     {
         return $this->hasMany(Page::class);
     }
+
+    /**
+     * The posts belonging to this author.
+     *
+     * @return HasMany<Post, $this>
+     */
+    public function posts(): HasMany
+    {
+        return $this->hasMany(Post::class);
+    }
 }
