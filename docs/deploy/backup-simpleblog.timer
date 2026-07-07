@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Simple Blog DB backup daily
+
+[Timer]
+# Daily at 03:30. Persistent=true means if the machine was off at 03:30, the
+# backup runs at next boot instead of being silently skipped.
+OnCalendar=*-*-* 03:30:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

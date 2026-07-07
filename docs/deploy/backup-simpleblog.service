@@ -1,0 +1,6 @@
+[Unit]
+Description=Simple Blog DB backup (verified SQLite snapshot)
+
+[Service]
+Type=oneshot
+ExecStart=/home/brian/scripts/backup-simpleblog.sh
