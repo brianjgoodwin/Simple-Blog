@@ -169,6 +169,14 @@ you steer, we verify before moving on.
 - Full test pass, security self-review, README with setup + `create-author` usage
 - Decide git remote (GitHub now; Gitea later per your infra plans)
 
+### Phase 7 — Deploy (planned, not started)
+- Put Simple Blog on a public HTTPS subdomain behind the shared Caddy proxy,
+  reusing the Puzzlebox pattern (systemd user service + `trustProxies` + Caddy
+  reverse_proxy + UFW restriction). Full step-by-step in
+  [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
+- Decisions still open: go-public-now vs. config-only, subdomain, port (suggest
+  8001), keep SQLite vs. MySQL. All captured in that doc.
+
 ### Deferred (modeled-for, not built)
 - `unlisted` post state
 - Admin UI for account creation
