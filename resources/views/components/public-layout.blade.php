@@ -12,7 +12,7 @@
     @vite(['resources/css/app.css'])
 </head>
 <body class="bg-white text-gray-900 antialiased">
-    <div class="max-w-2xl mx-auto px-4 py-12">
+    <div class="max-w-xl mx-auto px-4 py-12">
 
         <header class="mb-10 pb-6 border-b">
             <a href="{{ route('blog.home', $author) }}" class="text-2xl font-bold hover:underline">

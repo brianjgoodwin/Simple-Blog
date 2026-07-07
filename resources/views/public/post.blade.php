@@ -7,7 +7,7 @@
 
         {{-- Rendered through App\Support\Markdown: raw HTML stripped, unsafe
              links neutralized. Safe to output unescaped. --}}
-        <div class="prose max-w-none">
+        <div class="prose">
             {{ \App\Support\Markdown::toHtml($post->body) }}
         </div>
     </article>

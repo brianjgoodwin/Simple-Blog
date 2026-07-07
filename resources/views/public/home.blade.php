@@ -14,7 +14,7 @@
             </p>
 
             {{-- Full body, rendered safely (raw HTML stripped, links sanitized). --}}
-            <div class="prose max-w-none">
+            <div class="prose">
                 {{ \App\Support\Markdown::toHtml($post->body) }}
             </div>
         </article>
