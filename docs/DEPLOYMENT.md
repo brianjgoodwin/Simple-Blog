@@ -1,11 +1,22 @@
-# Deployment plan — Simple Blog behind Caddy
+# Deployment — Simple Blog behind Caddy
 
-**Status:** Not started. This is a plan to execute later, not a record of a done
-thing. Nothing below has been applied yet.
+**Status: LIVE as of 2026-07-07** at https://simpleblog.brianjgoodwin.dev.
+The checklist below is what was executed (kept as the record + the redeploy runbook).
 
-The goal: put Simple Blog on a public HTTPS subdomain on the dev server, reusing
-the exact pattern Puzzlebox already runs. Puzzlebox is the working reference —
-when in doubt, copy what it does.
+**Where it runs:** production checkout at `/srv/www/simpleblog` (separate from the
+dev copy at `~/developer/simple-blog`), served by the `simple-blog` systemd --user
+service on port 8001, fronted by the shared Caddy proxy. SQLite in WAL mode. See
+the server-wide proxy reference at `~/documents/caddy-docker-setup.md`.
+
+**Two gotchas hit during the first deploy (both documented in the caddy doc §6/§7):**
+1. Caddyfile edited via rename-replace went stale in the container's bind mount —
+   `caddy reload` silently no-op'd → Cloudflare 525. Fix: `docker compose up -d
+   --force-recreate caddy`.
+2. A leftover manual `artisan serve` squatted port 8001, so the systemd service
+   couldn't bind and looped → 502. Fix: kill the stray by exact PID, restart service.
+
+The goal was to reuse the exact pattern Puzzlebox already runs. Puzzlebox is the
+working reference — when in doubt, copy what it does.
 
 ## Decisions — LOCKED (2026-07-07)
 
