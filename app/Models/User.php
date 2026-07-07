@@ -32,6 +32,15 @@ class User extends Authenticatable
     }
 
     /**
+     * Bind users in public routes by their (immutable) username, not id,
+     * so /@{username} resolves the author.
+     */
+    public function getRouteKeyName(): string
+    {
+        return 'username';
+    }
+
+    /**
      * The pages (About, Links) belonging to this author.
      *
      * @return HasMany<Page, $this>

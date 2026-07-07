@@ -3,6 +3,7 @@
 use App\Http\Controllers\PageController;
 use App\Http\Controllers\PostController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\PublicBlogController;
 use App\Http\Controllers\PublishController;
 use Illuminate\Support\Facades\Route;
 
@@ -41,3 +42,21 @@ Route::middleware('auth')->group(function () {
 });
 
 require __DIR__.'/auth.php';
+
+/*
+| Public blog routes at /@{username}. The literal '@' prefix guarantees these
+| can never collide with app routes like /login or /dashboard. The username
+| pattern is constrained to our real rule so junk paths don't hit the DB.
+|
+| Order matters: the /about and /links page routes are declared BEFORE the
+| catch-all {slug} post route, so those reserved words resolve to pages.
+*/
+Route::pattern('author', '[a-z0-9_]+');
+
+Route::get('/@{author}', [PublicBlogController::class, 'home'])->name('blog.home');
+
+// Reserved page words, declared before the catch-all {slug} post route.
+Route::get('/@{author}/about', [PublicBlogController::class, 'about'])->name('blog.about');
+Route::get('/@{author}/links', [PublicBlogController::class, 'links'])->name('blog.links');
+
+Route::get('/@{author}/{slug}', [PublicBlogController::class, 'post'])->name('blog.post');
