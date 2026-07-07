@@ -178,8 +178,9 @@ you steer, we verify before moving on.
   ready); subdomain `simpleblog.brianjgoodwin.dev`; port `8001`; keep SQLite in
   production (read-heavy, near-zero write-concurrency = SQLite's best case; confirm
   WAL mode on deploy). Rationale in docs/DEPLOYMENT.md.
-- Brian's remaining manual steps at go-live: add the Cloudflare DNS record, and make
-  the deliberate call to flip it public.
+- No manual DNS step: a wildcard `*.brianjgoodwin.dev` already resolves the subdomain
+  (Puzzlebox has no per-subdomain record either). Going live = adding the Caddyfile
+  block + starting the service; the "flip it public" call is Brian's.
 
 ### Deferred (modeled-for, not built)
 - `unlisted` post state

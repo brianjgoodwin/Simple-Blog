@@ -10,13 +10,13 @@ when in doubt, copy what it does.
 ## Decisions — LOCKED (2026-07-07)
 
 1. **Go public — yes, but not on a deadline.** The goal is a live public deploy
-   (systemd + Caddy + Cloudflare DNS + trusted proxies). Whether that's "today" or
-   "later" depends on the work being ready, not a date. Execute the checklist below
-   when ready; the last two steps (Cloudflare DNS + the final go-live verify) are
-   Brian's deliberate call.
+   (systemd + Caddy + trusted proxies). Whether that's "today" or "later" depends on
+   the work being ready, not a date. Execute the checklist below when ready; going
+   live is Brian's deliberate call, but there is no manual DNS step (see decision 2).
 
-2. **Subdomain — `simpleblog.brianjgoodwin.dev`.** Brian adds the Cloudflare DNS
-   record (I can't touch DNS).
+2. **Subdomain — `simpleblog.brianjgoodwin.dev`.** No DNS record to add: a wildcard
+   `*.brianjgoodwin.dev` already resolves it (same as Puzzlebox, which has no record
+   of its own). Adding the Caddyfile block is what makes it live.
 
 3. **Port — 8001.** Puzzlebox owns 8000; 8080 is the current SSH-tunnel dev port.
    8001 keeps Simple Blog's production service clear of both.
@@ -134,10 +134,12 @@ sudo ufw status verbose            # see the existing 8000 rule
 sudo ufw status verbose            # verify 8001 is not open to the world
 ```
 
-### 6. Cloudflare DNS (you, manually)
-Add a proxied A/CNAME record for `simpleblog.brianjgoodwin.dev` pointing at the
-server, same as the other subdomains. The DNS challenge for TLS needs the
-Cloudflare API token that's already in `~/developer/caddy-proxy/.env`.
+### 6. Cloudflare DNS — nothing to do
+A **wildcard** `*.brianjgoodwin.dev` record already covers this — there is NO
+per-subdomain record for Puzzlebox, and none is needed here. `simpleblog.` resolves
+the moment the wildcard does. The TLS cert is still issued per-hostname by Caddy via
+the Cloudflare DNS challenge (token already in `~/developer/caddy-proxy/.env`), so
+adding the Caddyfile block in step 4 is the only thing that makes the subdomain live.
 
 ### 7. Verify
 ```bash
