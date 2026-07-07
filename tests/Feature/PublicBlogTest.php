@@ -184,3 +184,38 @@ test('an onerror image payload is stripped', function () {
         ->assertOk()
         ->assertDontSee('onerror', escape: false);
 });
+
+// --- Host landing page & 404s ----------------------------------------------
+
+test('the root landing page invites an anonymous visitor to sign in', function () {
+    $this->get('/')
+        ->assertOk()
+        ->assertSee('Author sign in')
+        ->assertDontSee('Go to your dashboard');
+});
+
+test('the root landing page points a logged-in author at the dashboard', function () {
+    $this->actingAs(author());
+
+    $this->get('/')
+        ->assertOk()
+        ->assertSee('Go to your dashboard')
+        ->assertDontSee('Author sign in');
+});
+
+test('an unknown author returns a 404, not a 403', function () {
+    $this->get('/@nobody')->assertNotFound();
+});
+
+test('an unknown slug for a real author returns a 404', function () {
+    author();
+
+    $this->get('/@brian/does-not-exist')->assertNotFound();
+});
+
+test('a draft slug is a 404 on the public post route, never a 403', function () {
+    $author = author();
+    Post::factory()->for($author)->create(['slug' => 'hidden-draft']); // draft by default
+
+    $this->get('/@brian/hidden-draft')->assertNotFound();
+});
