@@ -8,7 +8,9 @@ able to read or change author B's content, and the public must never see drafts.
 This file records the controls that enforce that, so a future me (or a reviewer)
 can see what's load-bearing without reverse-engineering it. It was written as the
 Phase 6 "security self-review" deliverable and independently re-audited by a
-security-focused agent; both passes agreed the controls below hold.
+security-focused agent; both passes agreed the controls below hold. A third audit
+after going live (2026-07-07) found four minor issues, all fixed — see the
+**Audit log** at the bottom.
 
 ## Threat model (what we actually defend against)
 
@@ -74,10 +76,53 @@ returns 403 (which would confirm a resource exists). The username route pattern
 `[a-z0-9_]+` plus the literal `@` prefix keeps junk paths and app-route
 collisions (`/login`, `/dashboard`) from ever reaching the DB.
 
+### Production deployment controls (added when the app went live 2026-07-07)
+The app is LIVE at `https://simpleblog.brianjgoodwin.dev` (prod checkout at
+`/srv/www/simpleblog`, port 8001, behind the shared Caddy proxy). The
+deployment-side controls:
+- **TLS** terminated by Caddy (Let's Encrypt); HTTP→HTTPS redirect at the edge.
+  Security headers (HSTS, X-Frame-Options, nosniff, Referrer-Policy) from Caddy.
+- **`trustProxies(at: '172.18.0.0/16')`** — trusts `X-Forwarded-*` only from the
+  Caddy Docker network, so HTTPS URLs generate correctly. (`bootstrap/app.php`)
+- **`trustHosts(at: ['simpleblog.brianjgoodwin.dev'])`** — rejects spoofed
+  Host / X-Forwarded-Host (400), so a compromised co-resident container can't
+  poison generated URLs. Enforced in non-local envs only. (`bootstrap/app.php`)
+- **UFW** scopes port 8001 to `172.18.0.0/16` only — the raw, TLS-less app is
+  never reachable from the public internet, only via Caddy.
+- **Secrets**: prod `.env` is `600`, app dir `750` — not readable by other shell
+  users on the box. `APP_ENV=production`, `APP_DEBUG=false`, own `APP_KEY`.
+- **`SESSION_SECURE_COOKIE=true`** set explicitly in prod (not left to
+  scheme-detection). Session cookie is `secure; httponly; samesite=lax`.
+- Full deploy runbook: `docs/DEPLOYMENT.md`. Proxy reference:
+  `~/documents/caddy-docker-setup.md`.
+
 ## Known deferrals (accepted for v1)
 
 - No rate limiting on public reader routes (it's read-only, invite-only host).
-- No Content-Security-Policy header. Worth adding if this ever leaves the dev
-  server — belt-and-suspenders on top of the Markdown stripping.
-- `artisan serve` is a dev server (no TLS, no hardening). Production hosting is
-  out of scope for this project; if deployed, put it behind a real web server.
+  Login and password-reset ARE throttled (Breeze: 5/min login, 6/min reset).
+- No Content-Security-Policy header. Now that it's behind Caddy, the natural place
+  to add one is a header in the Caddy block — belt-and-suspenders on top of the
+  Markdown stripping.
+- **`trustProxies` still trusts the whole `172.18.0.0/16`**, not just Caddy's
+  gateway `172.18.0.1`. `trustHosts` closes the exploitable path, so residual risk
+  is low, but narrowing the range is the more principled fix — do it next time the
+  proxy config is touched, and especially before running any *untrusted* container
+  on that Docker network.
+
+## Audit log
+
+### 2026-07-07 — post-deployment audit (app-code agent + infra audit)
+Ran after go-live. Core app controls (ownership, XSS, mass-assignment, injection,
+enumeration, registration-disabled) all re-confirmed clean — several verified by
+execution, not just reading. `composer audit` clean. Four minor issues found and
+fixed the same day (commit `98f9ef0` + a chmod):
+
+| # | Severity | Issue | Fix | Verified |
+|---|---|---|---|---|
+| 1 | HIGH | Prod `APP_KEY` readable by other shell users (`/srv/www` was world-traversable, `.env` was `664`) | `chmod 600 .env`, `chmod 750` app dir | `guest` re-tested → denied |
+| 2 | MEDIUM | Host-header injection: app on `0.0.0.0:8001` + `trustProxies('/16')` let an in-range container spoof `X-Forwarded-Host` to poison reset-link URLs | `trustHosts` allow-list | Live: spoofed Host → 400 |
+| 3 | LOW | `/forgot-password` returned "can't find a user" for unknown emails (enumeration) | Always return generic `RESET_LINK_SENT` | Live: broker `passwords.user` → response `passwords.sent` |
+| 4 | LOW | `SESSION_SECURE_COOKIE` unset (relied on scheme detection) | Set `=true` in prod `.env` | Live: cookie `secure` |
+
+Residual: finding #2's deeper fix (narrow `trustProxies` to `172.18.0.1`) is
+deferred — see the deferrals list above.
