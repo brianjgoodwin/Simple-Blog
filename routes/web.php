@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\PageController;
 use App\Http\Controllers\PostController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PublishController;
@@ -27,6 +28,10 @@ Route::middleware('auth')->group(function () {
             ->name('posts.publish');
         Route::delete('posts/{post}/publish', [PublishController::class, 'destroy'])
             ->name('posts.unpublish');
+
+        // Pages (About, Links) are edited by slug, scoped to the author.
+        Route::get('pages/{slug}/edit', [PageController::class, 'edit'])->name('pages.edit');
+        Route::put('pages/{slug}', [PageController::class, 'update'])->name('pages.update');
     });
 
     // Breeze profile management (kept at /profile).

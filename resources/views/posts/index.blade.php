@@ -60,6 +60,21 @@
                 </div>
             </div>
 
+            {{-- Pages --}}
+            <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
+                <div class="p-6 text-gray-900">
+                    <h3 class="text-lg font-medium mb-4">{{ __('Pages') }}</h3>
+                    <div class="flex gap-4">
+                        <a href="{{ route('pages.edit', 'about') }}" class="text-gray-800 hover:underline">
+                            {{ __('Edit About') }}
+                        </a>
+                        <a href="{{ route('pages.edit', 'links') }}" class="text-gray-800 hover:underline">
+                            {{ __('Edit Links') }}
+                        </a>
+                    </div>
+                </div>
+            </div>
+
         </div>
     </div>
 </x-app-layout>
