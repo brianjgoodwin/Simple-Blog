@@ -48,6 +48,47 @@ test('an unknown username returns 404', function () {
     $this->get('/@nobody')->assertNotFound();
 });
 
+// --- Full previews + pagination ---------------------------------------------
+
+test('the blog home shows the full rendered body of each post', function () {
+    $author = author();
+    Post::factory()->for($author)->published()->create([
+        'title' => 'Full Body Post',
+        'body' => '# A Heading'."\n\n".'Some **bold** content in the river.',
+    ]);
+
+    $this->get('/@brian')
+        ->assertOk()
+        ->assertSee('A Heading')                              // heading rendered
+        ->assertSee('<strong>bold</strong>', escape: false)   // markdown -> HTML inline
+        ->assertSee('content in the river');
+});
+
+test('the blog home paginates at 10 posts per page', function () {
+    $author = author();
+    // 11 published posts -> 10 on page 1, 1 on page 2.
+    Post::factory()->for($author)->published()->count(11)->create();
+
+    // Page 1 shows 10, and a pagination control to page 2.
+    $page1 = $this->get('/@brian')->assertOk();
+    expect($page1->viewData('posts')->count())->toBe(10);
+    expect($page1->viewData('posts')->hasPages())->toBeTrue();
+
+    // Page 2 shows the remaining 1.
+    $page2 = $this->get('/@brian?page=2')->assertOk();
+    expect($page2->viewData('posts')->count())->toBe(1);
+});
+
+test('pagination only counts published posts', function () {
+    $author = author();
+    Post::factory()->for($author)->published()->count(3)->create();
+    Post::factory()->for($author)->count(20)->create(); // drafts — must not paginate in
+
+    $page = $this->get('/@brian')->assertOk();
+    expect($page->viewData('posts')->total())->toBe(3);   // only the 3 published
+    expect($page->viewData('posts')->hasPages())->toBeFalse();
+});
+
 // --- Single post ------------------------------------------------------------
 
 test('a published post is publicly readable', function () {

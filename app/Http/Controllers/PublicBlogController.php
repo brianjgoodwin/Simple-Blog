@@ -15,7 +15,10 @@ use Illuminate\View\View;
 class PublicBlogController extends Controller
 {
     /**
-     * The author's blog home: their published posts, newest first.
+     * The author's blog home: full posts, newest first, paginated.
+     *
+     * Shows the complete body of each post inline (classic-blog "river"),
+     * 10 per page. Each post's title links to its own permalink for sharing.
      */
     public function home(User $author): View
     {
@@ -24,7 +27,7 @@ class PublicBlogController extends Controller
             'posts' => $author->posts()
                 ->published()
                 ->latest('published_at')
-                ->get(),
+                ->paginate(10),
         ]);
     }
 
