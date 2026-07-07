@@ -34,6 +34,28 @@
                 </form>
             </div>
 
+            {{-- Publish / unpublish: its own form, separate from the edit form. --}}
+            <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg p-6">
+                @if ($post->isPublished())
+                    <p class="text-sm text-gray-600 mb-3">
+                        {{ __('This post is live and visible to readers.') }}
+                    </p>
+                    <form method="POST" action="{{ route('posts.unpublish', $post) }}">
+                        @csrf
+                        @method('DELETE')
+                        <x-secondary-button>{{ __('Move back to draft') }}</x-secondary-button>
+                    </form>
+                @else
+                    <p class="text-sm text-gray-600 mb-3">
+                        {{ __('This is a draft. Publishing makes it public and locks its URL.') }}
+                    </p>
+                    <form method="POST" action="{{ route('posts.publish', $post) }}">
+                        @csrf
+                        <x-primary-button>{{ __('Publish') }}</x-primary-button>
+                    </form>
+                @endif
+            </div>
+
             {{-- Delete: its own form so it isn't nested inside the edit form. --}}
             <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg p-6">
                 <form method="POST" action="{{ route('posts.destroy', $post) }}"

@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\PostController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\PublishController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
@@ -20,6 +21,12 @@ Route::middleware('auth')->group(function () {
         Route::resource('posts', PostController::class)
             ->except(['show', 'index'])
             ->names('posts');
+
+        // Publish / unpublish a post.
+        Route::post('posts/{post}/publish', [PublishController::class, 'store'])
+            ->name('posts.publish');
+        Route::delete('posts/{post}/publish', [PublishController::class, 'destroy'])
+            ->name('posts.unpublish');
     });
 
     // Breeze profile management (kept at /profile).

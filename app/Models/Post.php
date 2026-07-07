@@ -69,4 +69,31 @@ class Post extends Model
     {
         return $this->status === PostStatus::Published;
     }
+
+    /**
+     * Publish this post.
+     *
+     * Sets published_at only on the FIRST publish, so re-publishing after an
+     * unpublish keeps the original publication date. The slug is already
+     * frozen by the controller (it stops regenerating once published), so
+     * nothing here touches the slug.
+     */
+    public function publish(): void
+    {
+        $this->status = PostStatus::Published;
+        $this->published_at ??= now();
+        $this->save();
+    }
+
+    /**
+     * Return this post to draft.
+     *
+     * Keeps the slug and published_at intact: if it's published again later,
+     * the same URL and original date are reused.
+     */
+    public function unpublish(): void
+    {
+        $this->status = PostStatus::Draft;
+        $this->save();
+    }
 }
