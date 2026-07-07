@@ -7,25 +7,32 @@ The goal: put Simple Blog on a public HTTPS subdomain on the dev server, reusing
 the exact pattern Puzzlebox already runs. Puzzlebox is the working reference —
 when in doubt, copy what it does.
 
-## Decisions to make first (I stopped here — these are yours)
+## Decisions — LOCKED (2026-07-07)
 
-1. **Go public now, or config-only?**
-   - Full public deploy (systemd + Caddy + Cloudflare DNS + trusted proxies, live).
-   - Config-only: wire up everything but don't create DNS / go live; flip on later.
-   - App-side only: just make Laravel proxy-aware, skip systemd + Caddy for now.
+1. **Go public — yes, but not on a deadline.** The goal is a live public deploy
+   (systemd + Caddy + Cloudflare DNS + trusted proxies). Whether that's "today" or
+   "later" depends on the work being ready, not a date. Execute the checklist below
+   when ready; the last two steps (Cloudflare DNS + the final go-live verify) are
+   Brian's deliberate call.
 
-2. **Subdomain** — candidates: `blog.brianjgoodwin.dev`, `write.brianjgoodwin.dev`,
-   `simpleblog.brianjgoodwin.dev`. (You must add the Cloudflare DNS record — I can't.)
+2. **Subdomain — `simpleblog.brianjgoodwin.dev`.** Brian adds the Cloudflare DNS
+   record (I can't touch DNS).
 
-3. **Port** — Puzzlebox owns **8000**; 8080 is the current SSH-tunnel dev port.
-   Suggest **8001** for Simple Blog's production service so nothing collides.
+3. **Port — 8001.** Puzzlebox owns 8000; 8080 is the current SSH-tunnel dev port.
+   8001 keeps Simple Blog's production service clear of both.
 
-4. **Database** — Simple Blog uses **SQLite** today. That's fine for a low-traffic,
-   invite-only blog and needs no Docker/MySQL. Decide whether to keep SQLite in
-   production (simplest) or mirror Puzzlebox's MySQL-in-Docker. Recommendation:
-   keep SQLite for v1 — one fewer moving part. If kept, the SQLite file and its
-   parent `database/` dir must be writable by the service user, and the file must
-   NOT be web-reachable (it isn't — it lives outside `public/`).
+4. **Database — keep SQLite in production, indefinitely.** Simple Blog's workload is
+   read-heavy and near-zero write-concurrency (a few invited authors saving posts by
+   hand; readers only read). That is SQLite's best case, not a compromise — no Docker,
+   no MySQL. The migration path to MySQL/Postgres stays open at near-zero cost because
+   the app is all Eloquent (no SQLite-specific SQL). Revisit ONLY if a write-heavy
+   feature lands (comments, reactions, per-pageview view counts, realtime) — write
+   concurrency is the trigger, not data size or traffic. Requirements when deploying:
+   - `database/` dir and the `.sqlite` file must be writable by the service user.
+   - The file must NOT be web-reachable (it isn't — it lives outside `public/`).
+   - **WAL mode must be on** (readers never block the writer). Laravel 11+ defaults
+     `journal_mode=WAL` for new SQLite connections — but confirm, don't assume. See
+     the verify step.
 
 ## How the Puzzlebox pattern works (the reference)
 
@@ -98,7 +105,7 @@ Add to `~/developer/caddy-proxy/Caddyfile`, mirroring the `puzzlebox.brianjgoodw
 block:
 
 ```
-<subdomain>.brianjgoodwin.dev {
+simpleblog.brianjgoodwin.dev {
 	import cloudflare
 	import security_headers
 	reverse_proxy host.docker.internal:8001 {
@@ -128,15 +135,22 @@ sudo ufw status verbose            # verify 8001 is not open to the world
 ```
 
 ### 6. Cloudflare DNS (you, manually)
-Add a proxied A/CNAME record for `<subdomain>.brianjgoodwin.dev` pointing at the
+Add a proxied A/CNAME record for `simpleblog.brianjgoodwin.dev` pointing at the
 server, same as the other subdomains. The DNS challenge for TLS needs the
 Cloudflare API token that's already in `~/developer/caddy-proxy/.env`.
 
 ### 7. Verify
 ```bash
 curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:8001/          # local app
-curl -s -o /dev/null -w "%{http_code}\n" https://<subdomain>.brianjgoodwin.dev/   # through Caddy
+curl -s -o /dev/null -w "%{http_code}\n" https://simpleblog.brianjgoodwin.dev/   # through Caddy
+
+# Confirm SQLite is in WAL mode (readers never block the writer). Expect: wal
+php artisan tinker --execute="echo DB::select('PRAGMA journal_mode')[0]->journal_mode;"
 ```
+If that prints anything other than `wal`, set it explicitly — either in
+`config/database.php` under the sqlite connection (`'journal_mode' => 'WAL'` on
+Laravel 11+) or once via `PRAGMA journal_mode=WAL;` (WAL persists on the file).
+
 Then browse it: landing page, a real `/@{username}` blog, and confirm the address
 bar shows a valid cert and `https://` URLs everywhere (proves trustProxies works).
 

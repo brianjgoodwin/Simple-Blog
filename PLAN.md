@@ -174,8 +174,12 @@ you steer, we verify before moving on.
   reusing the Puzzlebox pattern (systemd user service + `trustProxies` + Caddy
   reverse_proxy + UFW restriction). Full step-by-step in
   [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
-- Decisions still open: go-public-now vs. config-only, subdomain, port (suggest
-  8001), keep SQLite vs. MySQL. All captured in that doc.
+- **Decisions locked (2026-07-07):** go public (the goal, no deadline — deploy when
+  ready); subdomain `simpleblog.brianjgoodwin.dev`; port `8001`; keep SQLite in
+  production (read-heavy, near-zero write-concurrency = SQLite's best case; confirm
+  WAL mode on deploy). Rationale in docs/DEPLOYMENT.md.
+- Brian's remaining manual steps at go-live: add the Cloudflare DNS record, and make
+  the deliberate call to flip it public.
 
 ### Deferred (modeled-for, not built)
 - `unlisted` post state
