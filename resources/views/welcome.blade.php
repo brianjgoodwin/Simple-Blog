@@ -31,6 +31,8 @@
                 <a href="{{ route('login') }}" class="hover:underline">{{ __('Author sign in') }}</a>
             @endauth
         </p>
+
+        <x-site-footer />
     </div>
 </body>
 </html>

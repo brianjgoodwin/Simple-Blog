@@ -48,6 +48,13 @@ test('an unknown username returns 404', function () {
     $this->get('/@nobody')->assertNotFound();
 });
 
+test('the site footer appears on public blogs and the landing page', function () {
+    author();
+
+    $this->get('/@brian')->assertSee('Made with ♥ by Brian');
+    $this->get('/')->assertSee('Made with ♥ by Brian');
+});
+
 // --- Full previews + pagination ---------------------------------------------
 
 test('the blog home shows the full rendered body of each post', function () {
