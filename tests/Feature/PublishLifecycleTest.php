@@ -36,6 +36,23 @@ test('an author can unpublish their own post back to draft', function () {
     expect($post->refresh()->status)->toBe(PostStatus::Draft);
 });
 
+test('the unpublish button on the edit page actually submits its form', function () {
+    // Regression: x-secondary-button defaults to type="button", which does not
+    // submit — the route worked but the button did nothing. Route tests can't
+    // catch that, so this one checks the rendered page: inside the unpublish
+    // form, a type="submit" button must appear before the button label.
+    $author = User::factory()->create();
+    $post = Post::factory()->for($author)->published()->create();
+
+    $this->actingAs($author)
+        ->get(route('posts.edit', $post))
+        ->assertSeeInOrder([
+            route('posts.unpublish', $post),
+            'type="submit"',
+            'Move back to draft',
+        ], escape: false);
+});
+
 // --- The frozen-slug guarantee (the important one) --------------------------
 
 test('publishing freezes the slug: editing the title afterwards does not change the URL', function () {

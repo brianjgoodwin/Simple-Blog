@@ -55,7 +55,9 @@
                     <form method="POST" action="{{ route('posts.unpublish', $post) }}">
                         @csrf
                         @method('DELETE')
-                        <x-secondary-button>{{ __('Move back to draft') }}</x-secondary-button>
+                        {{-- x-secondary-button defaults to type="button", which
+                             does NOT submit a form — the type must be explicit. --}}
+                        <x-secondary-button type="submit">{{ __('Move back to draft') }}</x-secondary-button>
                     </form>
                 </div>
             @endif
