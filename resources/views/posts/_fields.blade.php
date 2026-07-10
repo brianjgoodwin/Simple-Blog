@@ -58,9 +58,11 @@
     <div class="mt-1 flex items-center justify-between text-sm text-gray-500">
         <p>{{ __('Markdown is supported. Raw HTML is not rendered.') }}</p>
         <p class="flex items-center gap-3 whitespace-nowrap">
-            <span x-show="autosaveStatus === 'saving'">{{ __('Saving…') }}</span>
-            <span x-show="autosaveStatus === 'saved'" x-text="'{{ __('Saved') }} ' + savedAtLabel"></span>
-            <span x-show="autosaveStatus === 'error'" class="text-red-600">{{ __('Autosave failed — save manually') }}</span>
+            {{-- One persistent live region whose text changes (see
+                 autosaveMessage() in composer.js). The word count stays
+                 OUTSIDE it — announcing every keystroke would be noise. --}}
+            <span role="status" x-text="autosaveMessage()"
+                  :class="autosaveStatus === 'error' ? 'text-red-600' : ''"></span>
             <span><span x-text="wordCount()"></span> {{ __('words') }}</span>
         </p>
     </div>

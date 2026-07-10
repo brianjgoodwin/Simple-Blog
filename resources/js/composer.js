@@ -35,6 +35,17 @@ export default function composer(config) {
             });
         },
 
+        // The full status-line text. Rendered into one persistent
+        // role="status" element: a live region whose CONTENTS change is
+        // announced reliably by screen readers, whereas toggling the
+        // visibility of separate elements often is not.
+        autosaveMessage() {
+            if (this.autosaveStatus === 'saving') return 'Saving…';
+            if (this.autosaveStatus === 'saved') return 'Saved ' + this.savedAtLabel;
+            if (this.autosaveStatus === 'error') return 'Autosave failed — save manually';
+            return '';
+        },
+
         wordCount() {
             const words = this.body.trim().split(/\s+/).filter(Boolean);
             return words.length;
