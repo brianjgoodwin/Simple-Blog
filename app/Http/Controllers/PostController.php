@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Enums\PostStatus;
 use App\Models\Post;
 use App\Support\SlugGenerator;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -44,22 +45,36 @@ class PostController extends Controller
     }
 
     /**
-     * Store a new post (always as a draft; publishing is a separate action).
+     * Store a new post as a draft — or, when the composer's Publish button
+     * was used (action=publish), save it and publish in one step.
      */
     public function store(Request $request): RedirectResponse
     {
         $validated = $request->validate([
             'title' => ['required', 'string', 'max:255'],
             'body' => ['nullable', 'string'],
+            'action' => ['nullable', 'in:publish'],
         ]);
 
         $author = Auth::user();
 
-        $post = new Post($validated); // title, body (fillable)
+        // Only the content fields; 'action' is a form control, not an attribute.
+        $post = new Post([
+            'title' => $validated['title'],
+            'body' => $validated['body'] ?? null,
+        ]);
         $post->user_id = $author->id;
         $post->slug = $this->slugs->generate($author, $validated['title']);
         $post->status = PostStatus::Draft;
         $post->save();
+
+        if (($validated['action'] ?? null) === 'publish') {
+            $post->publish();
+
+            return redirect()
+                ->route('posts.edit', $post)
+                ->with('status', 'Post published.');
+        }
 
         return redirect()
             ->route('posts.edit', $post)
@@ -81,23 +96,47 @@ class PostController extends Controller
      *
      * The slug is only regenerated while the post is still a draft; once
      * published, the slug is frozen (its public URL must never break).
+     *
+     * Serves two callers: the normal form submit (redirects back), and the
+     * composer's background autosave (sends Accept: application/json and
+     * gets JSON instead of a redirect). Same validation, same rules.
      */
-    public function update(Request $request, Post $post): RedirectResponse
+    public function update(Request $request, Post $post): RedirectResponse|JsonResponse
     {
         $this->authorize('update', $post);
 
         $validated = $request->validate([
             'title' => ['required', 'string', 'max:255'],
             'body' => ['nullable', 'string'],
+            'action' => ['nullable', 'in:publish'],
         ]);
 
-        $post->fill($validated); // title, body
+        // Only the content fields; 'action' is a form control, not an attribute.
+        $post->fill([
+            'title' => $validated['title'],
+            'body' => $validated['body'] ?? null,
+        ]);
 
         if (! $post->isPublished()) {
             $post->slug = $this->slugs->generate(Auth::user(), $validated['title'], $post->id);
         }
 
         $post->save();
+
+        if ($request->wantsJson()) {
+            return response()->json([
+                'saved' => true,
+                'saved_at' => $post->updated_at->toIso8601String(),
+            ]);
+        }
+
+        if (($validated['action'] ?? null) === 'publish' && ! $post->isPublished()) {
+            $post->publish();
+
+            return redirect()
+                ->route('posts.edit', $post)
+                ->with('status', 'Post published.');
+        }
 
         return redirect()
             ->route('posts.edit', $post)

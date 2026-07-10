@@ -182,6 +182,27 @@ you steer, we verify before moving on.
   (Puzzlebox has no per-subdomain record either). Going live = adding the Caddyfile
   block + starting the service; the "flip it public" call is Brian's.
 
+### Phase 8 — Composer improvements (2026-07-10)
+Requested: live preview, writing ergonomics, autosave, publish-from-composer.
+
+- **Live Markdown preview** — server-rendered by a small authenticated endpoint
+  (`POST /dashboard/posts/preview`) through the SAME `App\Support\Markdown`
+  pipeline as the public pages, so the preview is byte-for-byte what publishes
+  and XSS stripping behaves identically. Write/Preview tabs; render on switch.
+- **Ergonomics** — auto-growing textarea, live word count, Ctrl/Cmd-S submits
+  the form. Alpine.js only (already a dependency), no new packages.
+- **Autosave — DRAFTS ONLY, on the edit form only.** Design decision: a
+  published post must never have a half-typed sentence pushed live by a timer;
+  published posts keep deliberate manual saves. New posts autosave after the
+  first manual "Save Draft" creates the record. Debounced (saves a moment
+  after typing pauses) via the existing update endpoint returning JSON.
+- **Publish from composer** — a second submit button on both forms
+  (`action=publish`) that SAVES the current content, then publishes. This also
+  fixes a pre-existing trap: the old separate Publish form published the last
+  saved version, silently ignoring unsaved edits in the textarea above it.
+  The standalone publish card on the edit page is removed; the unpublish card
+  stays (returning to draft is a distinct, deliberate act).
+
 ### Deferred (modeled-for, not built)
 - `unlisted` post state
 - Admin UI for account creation

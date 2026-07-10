@@ -27,6 +27,15 @@
 
                     <div class="flex items-center gap-4">
                         <x-primary-button>{{ __('Save') }}</x-primary-button>
+                        @unless ($post->isPublished())
+                            {{-- Saves the current content, THEN publishes — one step,
+                                 nothing unsaved can be left behind. --}}
+                            <button type="submit" name="action" value="publish"
+                                    onclick="return confirm('Publish now? This makes the post public and locks its URL.');"
+                                    class="inline-flex items-center px-4 py-2 bg-green-700 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-green-600 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition ease-in-out duration-150">
+                                {{ __('Save & Publish') }}
+                            </button>
+                        @endunless
                         <a href="{{ route('dashboard') }}" class="text-gray-600 hover:underline">
                             {{ __('Back') }}
                         </a>
@@ -34,9 +43,12 @@
                 </form>
             </div>
 
-            {{-- Publish / unpublish: its own form, separate from the edit form. --}}
-            <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg p-6">
-                @if ($post->isPublished())
+            {{-- Unpublish: its own form, separate from the edit form. Publishing
+                 a draft happens via Save & Publish in the composer above (which
+                 saves current content first); returning to draft stays down here
+                 as a distinct, deliberate act. --}}
+            @if ($post->isPublished())
+                <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg p-6">
                     <p class="text-sm text-gray-600 mb-3">
                         {{ __('This post is live and visible to readers.') }}
                     </p>
@@ -45,16 +57,8 @@
                         @method('DELETE')
                         <x-secondary-button>{{ __('Move back to draft') }}</x-secondary-button>
                     </form>
-                @else
-                    <p class="text-sm text-gray-600 mb-3">
-                        {{ __('This is a draft. Publishing makes it public and locks its URL.') }}
-                    </p>
-                    <form method="POST" action="{{ route('posts.publish', $post) }}">
-                        @csrf
-                        <x-primary-button>{{ __('Publish') }}</x-primary-button>
-                    </form>
-                @endif
-            </div>
+                </div>
+            @endif
 
             {{-- Delete: its own form so it isn't nested inside the edit form. --}}
             <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg p-6">

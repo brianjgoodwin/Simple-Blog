@@ -1,3 +1,9 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Alpine: hide x-cloak elements until Alpine initializes (e.g. the composer's
+   preview pane, which must not flash on page load). */
+[x-cloak] {
+    display: none !important;
+}
