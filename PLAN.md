@@ -304,6 +304,65 @@ blog" link as the preview. No live preview in v1.
 - Layout options (column width, etc.) — against the opinionated character.
 - Author-supplied webfonts — external requests, licensing, and privacy.
 
+### Phase 11 — Invite codes (SKETCH — designed 2026-07-10, not scheduled)
+Reintroduce self-registration, gated by server-generated invite codes that
+Brian hand-distributes to testers. Framing matters: registration routes were
+REMOVED entirely (author:create is the only account path today), so this
+feature re-opens that endpoint — the code is the lock on it. Roughly a
+one-session build.
+
+**Data model — one `invites` table, deliberately dumb:**
+- `code` (string, unique), `note` (nullable — "for Dave" / batch label),
+  `used_at` (nullable timestamp), `used_by_id` (nullable FK users), timestamps.
+- Valid iff `used_at` is null — that single fact is the whole state machine;
+  no status enum (there is no third state). `used_by_id` = permanent audit
+  trail of which tester came from which code.
+- No `expires_at` in v1: revocation = delete the unused row.
+- Codes stored PLAINTEXT (decision, not oversight): hashed codes can't be
+  re-listed, forcing code tracking into a text file — a worse posture. Codes
+  are not passwords; an attacker who can read `invites` can read `users`.
+
+**Generation — artisan, matching the author:create pattern (no admin UI):**
+- `invite:generate {count} {--note=}` prints codes; `invite:list` shows
+  used/unused.
+- Format: random from an unambiguous alphabet (no 0/O/1/l), grouped for
+  humans (e.g. `Kk7m-Xw4r-Tn2p`), ~70 bits. Validation normalizes (strip
+  dashes/whitespace) before lookup.
+
+**Registration flow:**
+- Distribute as links: `/register?code=...` pre-fills an editable code field.
+  Form = code + name + username + email + password. Creates a plain author,
+  byte-identical to author:create output (no roles, no flags).
+- **Username rules must not fork:** extract the canonical rules from
+  CreateAuthor (`lowercase`, `regex:/^[a-z0-9_]+$/`, `max:30`, `unique`) into
+  one shared place (e.g. `User::usernameRules()`) BEFORE writing the second
+  copy, or they will drift.
+- **Atomic consumption:** inside `DB::transaction`, re-fetch the invite with
+  `lockForUpdate()`, confirm `used_at` still null, create user, stamp
+  `used_at`/`used_by_id`. Same shape as author:create's transaction, plus the
+  lock. Kills the two-signups-one-code race outright.
+
+**Security posture (this re-opens an unauthenticated endpoint):**
+- `throttle` middleware on the register routes (~5/min/IP) — this is what
+  actually makes code-guessing infeasible, and blunts username/email
+  enumeration probing.
+- Error messages CAN be honest ("code already used" vs "invalid") — at 70
+  bits, guessing can't reach a valid-but-used code, and honesty helps a
+  confused tester. Unlike password reset, no paranoid-generic errors needed.
+- No public link to /register anywhere — the URL travels with the invite.
+  Landing page's "invite-only" copy stays truthful.
+- NOT needed: email verification (testers are known), CAPTCHA (the code is
+  the gate).
+
+**Open question before building:** should a code bind to an email? Assumed
+NO — any code, any email, first-come-first-served; `note` is the memory aid.
+Pre-binding adds friction and schema for a problem hand-distribution doesn't
+have. Brian's call — he knows the testers.
+
+**Tests that matter:** used code rejected; code consumed exactly once under
+concurrent submits; registered account matches an artisan-created one;
+throttling kicks in.
+
 ### Deferred (modeled-for, not built)
 - `unlisted` post state
 - Admin UI for account creation
