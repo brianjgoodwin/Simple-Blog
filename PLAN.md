@@ -363,11 +363,70 @@ have. Brian's call — he knows the testers.
 concurrent submits; registered account matches an artisan-created one;
 throttling kicks in.
 
+### Phase 12 — Atom feed + follow features (SKETCH — designed 2026-07-10, not scheduled)
+Promotes RSS out of the deferred list. One feed per blog; a "follow" story
+without accounts, email, or federation. One session as scoped, with the
+Markdown caching decision as flagged prerequisite-or-companion.
+
+**The feed:**
+- `/@{username}/feed` — published posts only, newest first, capped ~20.
+- **No site-wide firehose feed** (decision): the landing page reveals nothing
+  about who has blogs here; an all-authors feed would quietly undo that. Same
+  reasoning as the drafts-404 posture. Don't add it innocently later.
+- **Hand-rolled Atom, one format done well.** All readers handle RSS 2.0 and
+  Atom alike; Atom is the better-specified format (unambiguous dates,
+  required unique IDs, defined model for embedded HTML). No package — it's
+  ~40 lines of Blade XML template and the format is worth learning. JSON
+  Feed later only if the mood strikes (second trivial template, same data).
+- **Full content** through App\Support\Markdown (matches the river's
+  character; XSS posture and heading shift carry into readers automatically).
+  Blade's {{ }} does the XML-escaping into <content type="html">.
+- **Entry IDs = permalink URLs**, permanent because slugs freeze at first
+  publish — an existing architectural property pays off; readers never
+  re-show old posts as new.
+- **Discovery:** <link rel="alternate" type="application/atom+xml"> in the
+  public layout head + a visible "Feed" text link in the blog nav/footer.
+
+**Conditional GET — the do-it-right piece:** readers poll every 15–60 min
+per subscriber forever; ~10 followers ≈ 500 req/day against single-process
+artisan serve rendering Markdown each hit. Set Last-Modified (and/or ETag)
+from max(updated_at) of published posts; answer If-Modified-Since with 304
+and an empty body (Symfony response layer has this built in). Turns feed
+polling from the biggest recurring cost into a rounding error. Feeds
+re-render every body on every non-304 hit — strongest argument yet to
+settle the body_html caching decision (Option A) before or with this phase.
+
+**Safety test that matters:** the feed uses the exact same published() scope
+as the public pages, with a test asserting a draft NEVER appears — the feed
+is a new place for the drafts-never-leak guarantee to fail.
+
+**Riding along:**
+- **Open Graph + description meta tags** on public pages — post links unfurl
+  with title/author/date when pasted in chat/social. A handful of meta lines
+  in the public layout; highest visible-impact-per-line item in the phase.
+- **sitemap.xml per blog** (optional) — same Blade-XML-over-published-posts
+  shape as the feed; more discovery than follow.
+
+**Explicitly out (look cheap, aren't):**
+- Email subscriptions — deliverability, unsubscribe compliance, address
+  storage (privacy weight), bounces. RSS serves the same need here.
+- ActivityPub / follow-from-Mastodon — webfinger + HTTP signatures +
+  inbox/outbox + follower storage; a multi-week project with an operational
+  tail. RSS gets 80%; bridges cover the rest.
+- WebSub — needs hub coordination; buys nothing at this scale that 304s don't.
+
+**Open questions before building:**
+1. Atom `updated`: honest `updated_at` (edits may re-surface the post in
+   some readers — arguably a feature) vs quiet `published_at` (corrections
+   never re-surface). Recommendation: honest `updated_at`. Brian's call.
+2. Do the OG meta tags ride along here or become their own line item?
+
 ### Deferred (modeled-for, not built)
 - `unlisted` post state
 - Admin UI for account creation
 - Username change + redirects
-- Images, tags, comments, RSS — explicitly out of scope for v1
+- Images, tags, comments — explicitly out of scope for v1
+  (RSS was on this list; promoted to the Phase 12 sketch above)
 
 ---
 
