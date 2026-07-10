@@ -140,3 +140,17 @@ test('an author can delete their own post', function () {
 
     expect(Post::count())->toBe(0);
 });
+
+// --- Page titles (a11y: SC 2.4.2) --------------------------------------------
+
+test('dashboard pages have distinct titles', function () {
+    $author = User::factory()->create();
+    $post = Post::factory()->for($author)->create();
+
+    $this->actingAs($author)->get(route('dashboard'))
+        ->assertSee('<title>Dashboard — ', escape: false);
+    $this->actingAs($author)->get(route('posts.create'))
+        ->assertSee('<title>New Post — ', escape: false);
+    $this->actingAs($author)->get(route('posts.edit', $post))
+        ->assertSee('<title>Edit Post — ', escape: false);
+});

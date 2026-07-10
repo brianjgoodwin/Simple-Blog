@@ -5,7 +5,9 @@
         <meta name="viewport" content="width=device-width, initial-scale=1">
         <meta name="csrf-token" content="{{ csrf_token() }}">
 
-        <title>{{ config('app.name', 'Laravel') }}</title>
+        {{-- Per-page title (a11y: every page must be distinguishable by its
+             <title>); views pass it via <x-slot name="title">. --}}
+        <title>{{ isset($title) ? $title.' — '.config('app.name', 'Laravel') : config('app.name', 'Laravel') }}</title>
 
         <!-- Fonts -->
         <link rel="preconnect" href="https://fonts.bunny.net">

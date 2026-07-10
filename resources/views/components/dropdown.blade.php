@@ -13,7 +13,9 @@ $width = match ($width) {
 };
 @endphp
 
-<div class="relative" x-data="{ open: false }" @click.outside="open = false" @close.stop="open = false">
+{{-- @keydown.escape.window lets keyboard users close the menu; stock Breeze
+     only closed on outside click. --}}
+<div class="relative" x-data="{ open: false }" @click.outside="open = false" @close.stop="open = false" @keydown.escape.window="open = false">
     <div @click="open = ! open">
         {{ $trigger }}
     </div>
