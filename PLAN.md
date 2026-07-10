@@ -203,6 +203,61 @@ Requested: live preview, writing ergonomics, autosave, publish-from-composer.
   The standalone publish card on the edit page is removed; the unpublish card
   stays (returning to draft is a distinct, deliberate act).
 
+### Phase 9 — Accessibility fixes (planned 2026-07-10)
+From the WCAG 2.2 AA audit (full findings in the audit report / session log).
+Seven steps, ordered by impact; one commit per step so each is revertable and
+the history documents what each fix was for. No new packages.
+
+1. **Fix the unpublish button (functional bug).** `x-secondary-button`
+   defaults `type="button"`, so "Move back to draft" never submits its form.
+   Pass `type="submit"` in `posts/edit.blade.php`. Add a browser-shaped
+   regression guard: a feature test asserting the rendered edit page contains
+   a submit-type button inside the unpublish form (route tests already cover
+   the backend, which is why this slipped through).
+2. **Autosave live region.** In `posts/_fields.blade.php`, replace the three
+   `x-show` status spans with ONE persistent `<span role="status">` whose text
+   is bound with `x-text` (a persistent container whose contents change
+   announces reliably; toggling elements often doesn't). Word count stays
+   outside the region (per-keystroke announcements would be noise). Add
+   `x-cloak` so nothing flashes pre-Alpine.
+3. **Breeze nav + titles.** In `navigation.blade.php` / `dropdown.blade.php`:
+   visible focus ring on the account-menu trigger (it has `focus:outline-none`
+   with no replacement), `:aria-expanded` on trigger + hamburger,
+   `aria-label` on the hamburger, `@keydown.escape.window` to close the
+   dropdown, real focus style on dropdown items (gray-100-on-white is
+   invisible). Per-page `<title>` via a `$title` prop in `app.blade.php` /
+   `guest.blade.php` (public layout already does this correctly).
+4. **Drop the half-tablist.** Remove `role="tablist"` from the Write/Preview
+   wrapper; add `:aria-pressed` to the two buttons. Design decision: it is a
+   two-state mode toggle, not a tab widget — completing the full ARIA tabs
+   pattern (5 attributes + arrow-key JS) buys nothing here.
+5. **Own the pagination views.** `artisan vendor:publish
+   --tag=laravel-pagination` + publish `lang/en/pagination.php`. Fix in the
+   published copies: focus ring ≥3:1 (stock is gray-300 = 1.47:1), plain
+   "Previous"/"Next" lang strings (stock double-escapes `&laquo;` into the
+   aria-label), hover arrow contrast, strip `dark:` classes (layout has no
+   dark mode, so OS-dark users currently get dark buttons on a white page).
+6. **Heading hierarchy.** (a) Shift author Markdown headings +1 level in
+   `App\Support\Markdown` (`#` → h2, capped at h6) — single pipeline, so
+   preview and public output stay identical; river shows h2 titles with h2
+   author headings as siblings, post page shows h1 title over h2+, both sane.
+   Unit tests for the shift + cap. (b) Blog name becomes `<h1>` on the public
+   home; `public/page.blade.php` gets a heading; the authenticated header
+   slot becomes h1 (pages currently start at h2). Note: (a) changes rendered
+   HTML of existing posts — re-render caching (open decision) lands after
+   this, or must invalidate.
+7. **Contrast + affordance sweep.** Darken hovers instead of lightening
+   (Publish `hover:bg-green-600` → green-800; danger `hover:bg-red-500` →
+   red-700); `text-green-600` status → green-800; hamburger icon gray-400 →
+   gray-500; persistent underlines on public template links (touch users
+   never see `hover:underline`); footer ♥ wrapped `aria-hidden` with sr-only
+   "love"; `<time>` elements on dates; `<main>` on welcome/404; `role="status"`
+   on flash messages; dashboard lists become `<ul>`.
+
+Verify: full Pest suite + manual keyboard pass (tab through nav, dropdown,
+composer, pagination) + live check after deploy (`npm run build`,
+`view:clear`; no new routes so no `route:cache` concern).
+
 ### Deferred (modeled-for, not built)
 - `unlisted` post state
 - Admin UI for account creation
