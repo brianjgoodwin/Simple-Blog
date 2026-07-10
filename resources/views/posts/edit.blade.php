@@ -2,9 +2,9 @@
     <x-slot name="title">{{ __('Edit Post') }}</x-slot>
     <x-slot name="header">
         <div class="flex items-center justify-between">
-            <h2 class="font-semibold text-xl text-gray-800 leading-tight">
+            <h1 class="font-semibold text-xl text-gray-800 leading-tight">
                 {{ __('Edit Post') }}
-            </h2>
+            </h1>
             <span class="text-sm px-2 py-1 rounded {{ $post->isPublished() ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600' }}">
                 {{ $post->isPublished() ? __('Published') : __('Draft') }}
             </span>

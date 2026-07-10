@@ -1,4 +1,4 @@
-<x-public-layout :author="$author">
+<x-public-layout :author="$author" :homepage="true">
     @forelse ($posts as $post)
         <article class="mb-12 pb-12 border-b last:border-0">
             <h2 class="text-2xl font-bold">

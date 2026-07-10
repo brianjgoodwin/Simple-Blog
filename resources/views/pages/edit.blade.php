@@ -1,9 +1,9 @@
 <x-app-layout>
     <x-slot name="title">{{ __('Edit :page Page', ['page' => ucfirst($page->slug)]) }}</x-slot>
     <x-slot name="header">
-        <h2 class="font-semibold text-xl text-gray-800 leading-tight">
+        <h1 class="font-semibold text-xl text-gray-800 leading-tight">
             {{ __('Edit :page Page', ['page' => ucfirst($page->slug)]) }}
-        </h2>
+        </h1>
     </x-slot>
 
     <div class="py-12">

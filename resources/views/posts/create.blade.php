@@ -1,9 +1,9 @@
 <x-app-layout>
     <x-slot name="title">{{ __('New Post') }}</x-slot>
     <x-slot name="header">
-        <h2 class="font-semibold text-xl text-gray-800 leading-tight">
+        <h1 class="font-semibold text-xl text-gray-800 leading-tight">
             {{ __('New Post') }}
-        </h2>
+        </h1>
     </x-slot>
 
     <div class="py-12">

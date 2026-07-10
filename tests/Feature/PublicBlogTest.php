@@ -226,3 +226,18 @@ test('a draft slug is a 404 on the public post route, never a 403', function () 
 
     $this->get('/@brian/hidden-draft')->assertNotFound();
 });
+
+// --- Heading hierarchy (a11y) -------------------------------------------------
+
+test('the blog name is the h1 on the home page but not on a post page', function () {
+    $author = User::factory()->create();
+    $post = Post::factory()->for($author)->published()->create();
+
+    // Home: blog name wrapped in <h1>.
+    $this->get(route('blog.home', $author))
+        ->assertSeeInOrder(['<h1', $author->name], escape: false);
+
+    // Post page: the post title is the h1; the blog name is not a heading.
+    $this->get(route('blog.post', [$author, $post->slug]))
+        ->assertSeeInOrder(['<p class="text-2xl font-bold">', '<h1'], escape: false);
+});

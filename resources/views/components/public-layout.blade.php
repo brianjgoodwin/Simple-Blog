@@ -2,7 +2,7 @@
     Public reader-facing layout. Deliberately minimal and separate from the
     authenticated dashboard layout.
 --}}
-@props(['author', 'title' => null])
+@props(['author', 'title' => null, 'homepage' => false])
 <!DOCTYPE html>
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
 <head>
@@ -15,9 +15,22 @@
     <div class="max-w-xl mx-auto px-4 py-12">
 
         <header class="mb-10 pb-6 border-b">
-            <a href="{{ route('blog.home', $author) }}" class="text-2xl font-bold hover:underline">
-                {{ $author->name }}
-            </a>
+            {{-- The blog name is the <h1> on the home page only; on post
+                 and About/Links pages the content provides its own h1, and
+                 two would compete. Same link either way. --}}
+            @if ($homepage)
+                <h1 class="text-2xl font-bold">
+                    <a href="{{ route('blog.home', $author) }}" class="hover:underline">
+                        {{ $author->name }}
+                    </a>
+                </h1>
+            @else
+                <p class="text-2xl font-bold">
+                    <a href="{{ route('blog.home', $author) }}" class="hover:underline">
+                        {{ $author->name }}
+                    </a>
+                </p>
+            @endif
             <nav class="mt-3 flex gap-4 text-sm text-gray-600">
                 <a href="{{ route('blog.home', $author) }}" class="hover:underline">{{ __('Posts') }}</a>
                 <a href="{{ route('blog.about', $author) }}" class="hover:underline">{{ __('About') }}</a>
