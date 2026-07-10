@@ -23,13 +23,17 @@
     {{-- Write / Preview tabs --}}
     <div class="flex items-center justify-between">
         <x-input-label for="body" :value="__('Body (Markdown)')" />
-        <div class="flex text-sm rounded-md border border-gray-300 overflow-hidden" role="tablist">
-            <button type="button" @click="tab = 'write'"
+        {{-- Deliberately NOT an ARIA tab widget: it's a two-state mode
+             toggle, so plain buttons with aria-pressed are the honest
+             semantics (a role="tablist" without the full tab pattern —
+             roles, aria-selected, arrow keys — is worse than none). --}}
+        <div class="flex text-sm rounded-md border border-gray-300 overflow-hidden">
+            <button type="button" @click="tab = 'write'" :aria-pressed="(tab === 'write').toString()"
                     :class="tab === 'write' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'"
                     class="px-3 py-1">
                 {{ __('Write') }}
             </button>
-            <button type="button" @click="showPreview()"
+            <button type="button" @click="showPreview()" :aria-pressed="(tab === 'preview').toString()"
                     :class="tab === 'preview' ? 'bg-gray-800 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'"
                     class="px-3 py-1 border-l border-gray-300">
                 {{ __('Preview') }}
