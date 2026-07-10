@@ -203,7 +203,7 @@ Requested: live preview, writing ergonomics, autosave, publish-from-composer.
   The standalone publish card on the edit page is removed; the unpublish card
   stays (returning to draft is a distinct, deliberate act).
 
-### Phase 9 — Accessibility fixes (planned 2026-07-10)
+### Phase 9 — Accessibility fixes (DONE — deployed 2026-07-10)
 From the WCAG 2.2 AA audit (full findings in the audit report / session log).
 Seven steps, ordered by impact; one commit per step so each is revertable and
 the history documents what each fix was for. No new packages.
