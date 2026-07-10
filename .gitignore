@@ -25,3 +25,8 @@ _ide_helper.php
 Homestead.json
 Homestead.yaml
 Thumbs.db
+
+# Published Blade view overrides (vendor:publish) ARE source code. This
+# re-include exists because a global gitignore rule "vendor/" would
+# otherwise silently exclude them; Composer's vendor is /vendor above.
+!resources/views/vendor/
