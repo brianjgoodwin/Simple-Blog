@@ -258,6 +258,52 @@ Verify: full Pest suite + manual keyboard pass (tab through nav, dropdown,
 composer, pagination) + live check after deploy (`npm run build`,
 `view:clear`; no new routes so no `route:cache` concern).
 
+### Phase 10 — Blog appearance settings (SKETCH — designed 2026-07-10, not scheduled)
+Light per-author customization of the public blog. Deliberately small: a
+serif/sans toggle plus a handful of bundled, pre-verified themes. Roughly a
+one-session build; most of the work is choosing colors and verifying contrast.
+
+**Scope (v1):**
+- **Font toggle:** serif vs sans. System font stacks only (no webfonts on the
+  public pages — keeps the zero-external-requests posture). `prose` inherits
+  the family, so one conditional class on the public layout's `<body>` does it.
+- **Named themes, 3–4, bundled not mixable:** each theme = background tint +
+  accent color (links/underlines, masthead, header border). Body text stays
+  gray-900-on-light in every theme. Bundling matters: independent axes
+  multiply the contrast-verification work (4 accents × 3 backgrounds = 12
+  combos); bundled themes add (4 themes = 4 verifications, done once, by us).
+
+**Architecture decisions (locked at design time):**
+1. **Themes are CSS-only, never HTML-level.** A theme changes only a
+   `data-theme` attribute + font class on the public `<body>`, and CSS custom
+   properties in app.css say what each theme means. Rendered post HTML is
+   byte-identical across themes — so the open body_html caching decision
+   (Option A) is unaffected by this feature. If a theme ever needs different
+   markup, that's a scope change, not a tweak.
+2. **Tailwind is compile-time**, so no interpolated classes
+   (`bg-{{ $color }}-100` is invisible to the build). Every theme's CSS is
+   written out by hand in app.css using CSS variables; templates reference
+   `var(--accent)` etc. via a few custom utility lines.
+3. **Enum-backed columns, like PostStatus:** `theme` and `font` string columns
+   on `users`, each validated against a PHP enum. No settings table, no JSON
+   column — flexibility we've decided not to need. Adding a theme later =
+   enum case + CSS block + one contrast verification.
+4. **Every theme ships AA-verified.** The limited set is the a11y guarantee:
+   we check each theme's pairs once (incl. the decoration-gray-300 underline
+   equivalent per background) and authors can't produce a failing combination.
+
+**UI:** a small dashboard settings page (radio buttons, Save), "view your
+blog" link as the preview. No live preview in v1.
+
+**Explicitly out of scope (v1):**
+- Dark mode — looks like "one more theme," is actually a project: full
+  contrast re-audit, prose-invert, dark values for nav/pagination/footer.
+- Free-form colors or custom CSS — breaks the verified-once contrast
+  guarantee; author CSS on public pages is also an injection/exfiltration
+  surface (e.g. CSS url() beacons).
+- Layout options (column width, etc.) — against the opinionated character.
+- Author-supplied webfonts — external requests, licensing, and privacy.
+
 ### Deferred (modeled-for, not built)
 - `unlisted` post state
 - Admin UI for account creation
