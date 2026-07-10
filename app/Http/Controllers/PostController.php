@@ -23,9 +23,15 @@ class PostController extends Controller
     {
         $author = Auth::user();
 
+        // The dashboard only shows titles and dates — don't load every post's
+        // full Markdown body just to render a list (it grows forever).
         return view('posts.index', [
-            'drafts' => $author->posts()->draft()->latest('updated_at')->get(),
-            'published' => $author->posts()->published()->latest('published_at')->get(),
+            'drafts' => $author->posts()->draft()
+                ->select(['id', 'title', 'slug', 'updated_at'])
+                ->latest('updated_at')->get(),
+            'published' => $author->posts()->published()
+                ->select(['id', 'title', 'slug', 'published_at'])
+                ->latest('published_at')->get(),
         ]);
     }
 
