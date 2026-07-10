@@ -51,8 +51,10 @@ test('an unknown username returns 404', function () {
 test('the site footer appears on public blogs and the landing page', function () {
     author();
 
-    $this->get('/@brian')->assertSee('Made with ♥ by Brian');
-    $this->get('/')->assertSee('Made with ♥ by Brian');
+    // The heart is wrapped in aria-hidden/sr-only spans, so assert the
+    // pieces in order rather than the contiguous string.
+    $this->get('/@brian')->assertSeeInOrder(['Made with', '♥', 'by Brian']);
+    $this->get('/')->assertSeeInOrder(['Made with', '♥', 'by Brian']);
 });
 
 // --- Full previews + pagination ---------------------------------------------

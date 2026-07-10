@@ -31,10 +31,13 @@
                     </a>
                 </p>
             @endif
+            {{-- Persistent underlines: these links match the nav text color,
+                 so hover-only underlines left no at-rest cue (and touch users
+                 never see hover states). --}}
             <nav class="mt-3 flex gap-4 text-sm text-gray-600">
-                <a href="{{ route('blog.home', $author) }}" class="hover:underline">{{ __('Posts') }}</a>
-                <a href="{{ route('blog.about', $author) }}" class="hover:underline">{{ __('About') }}</a>
-                <a href="{{ route('blog.links', $author) }}" class="hover:underline">{{ __('Links') }}</a>
+                <a href="{{ route('blog.home', $author) }}" class="underline decoration-gray-300 hover:decoration-current">{{ __('Posts') }}</a>
+                <a href="{{ route('blog.about', $author) }}" class="underline decoration-gray-300 hover:decoration-current">{{ __('About') }}</a>
+                <a href="{{ route('blog.links', $author) }}" class="underline decoration-gray-300 hover:decoration-current">{{ __('Links') }}</a>
             </nav>
         </header>
 

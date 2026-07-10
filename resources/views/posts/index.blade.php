@@ -16,7 +16,7 @@
         <div class="max-w-7xl mx-auto sm:px-6 lg:px-8 space-y-6">
 
             @if (session('status'))
-                <div class="p-4 bg-green-100 text-green-800 rounded-lg">
+                <div role="status" class="p-4 bg-green-100 text-green-800 rounded-lg">
                     {{ session('status') }}
                 </div>
             @endif
@@ -26,18 +26,25 @@
                 <div class="p-6 text-gray-900">
                     <h3 class="text-lg font-medium mb-4">{{ __('Drafts') }}</h3>
 
-                    @forelse ($drafts as $post)
-                        <div class="flex items-center justify-between py-2 border-b last:border-0">
-                            <a href="{{ route('posts.edit', $post) }}" class="text-gray-800 hover:underline">
-                                {{ $post->title }}
-                            </a>
-                            <span class="text-sm text-gray-500">
-                                {{ __('edited') }} {{ $post->updated_at->diffForHumans() }}
-                            </span>
-                        </div>
-                    @empty
+                    {{-- A real list, so screen readers get "list, N items"
+                         and per-item navigation. --}}
+                    @if ($drafts->isEmpty())
                         <p class="text-gray-500">{{ __('No drafts yet.') }}</p>
-                    @endforelse
+                    @else
+                        <ul>
+                            @foreach ($drafts as $post)
+                                <li class="flex items-center justify-between py-2 border-b last:border-0">
+                                    <a href="{{ route('posts.edit', $post) }}" class="text-gray-800 hover:underline">
+                                        {{ $post->title }}
+                                    </a>
+                                    <span class="text-sm text-gray-500">
+                                        {{ __('edited') }}
+                                        <time datetime="{{ $post->updated_at->toIso8601String() }}">{{ $post->updated_at->diffForHumans() }}</time>
+                                    </span>
+                                </li>
+                            @endforeach
+                        </ul>
+                    @endif
                 </div>
             </div>
 
@@ -46,18 +53,23 @@
                 <div class="p-6 text-gray-900">
                     <h3 class="text-lg font-medium mb-4">{{ __('Published') }}</h3>
 
-                    @forelse ($published as $post)
-                        <div class="flex items-center justify-between py-2 border-b last:border-0">
-                            <a href="{{ route('posts.edit', $post) }}" class="text-gray-800 hover:underline">
-                                {{ $post->title }}
-                            </a>
-                            <span class="text-sm text-gray-500">
-                                {{ __('published') }} {{ $post->published_at->format('M j, Y') }}
-                            </span>
-                        </div>
-                    @empty
+                    @if ($published->isEmpty())
                         <p class="text-gray-500">{{ __('Nothing published yet.') }}</p>
-                    @endforelse
+                    @else
+                        <ul>
+                            @foreach ($published as $post)
+                                <li class="flex items-center justify-between py-2 border-b last:border-0">
+                                    <a href="{{ route('posts.edit', $post) }}" class="text-gray-800 hover:underline">
+                                        {{ $post->title }}
+                                    </a>
+                                    <span class="text-sm text-gray-500">
+                                        {{ __('published') }}
+                                        <time datetime="{{ $post->published_at->toDateString() }}">{{ $post->published_at->format('M j, Y') }}</time>
+                                    </span>
+                                </li>
+                            @endforeach
+                        </ul>
+                    @endif
                 </div>
             </div>
 

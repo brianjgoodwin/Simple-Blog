@@ -10,7 +10,7 @@
         <div class="max-w-3xl mx-auto sm:px-6 lg:px-8 space-y-6">
 
             @if (session('status'))
-                <div class="p-4 bg-green-100 text-green-800 rounded-lg">
+                <div role="status" class="p-4 bg-green-100 text-green-800 rounded-lg">
                     {{ session('status') }}
                 </div>
             @endif

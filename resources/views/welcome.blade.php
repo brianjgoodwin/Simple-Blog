@@ -18,19 +18,21 @@
 </head>
 <body class="bg-white text-gray-900 antialiased">
     <div class="max-w-xl mx-auto px-4 py-24">
-        <h1 class="text-3xl font-bold">{{ config('app.name') }}</h1>
+        <main>
+            <h1 class="text-3xl font-bold">{{ config('app.name') }}</h1>
 
-        <p class="mt-4 text-gray-600">
-            {{ __('A small, invite-only home for writing. Each author keeps one blog.') }}
-        </p>
+            <p class="mt-4 text-gray-600">
+                {{ __('A small, invite-only home for writing. Each author keeps one blog.') }}
+            </p>
 
-        <p class="mt-8 text-sm text-gray-600">
-            @auth
-                <a href="{{ route('dashboard') }}" class="hover:underline">{{ __('Go to your dashboard') }}</a>
-            @else
-                <a href="{{ route('login') }}" class="hover:underline">{{ __('Author sign in') }}</a>
-            @endauth
-        </p>
+            <p class="mt-8 text-sm text-gray-600">
+                @auth
+                    <a href="{{ route('dashboard') }}" class="underline decoration-gray-300 hover:decoration-current">{{ __('Go to your dashboard') }}</a>
+                @else
+                    <a href="{{ route('login') }}" class="underline decoration-gray-300 hover:decoration-current">{{ __('Author sign in') }}</a>
+                @endauth
+            </p>
+        </main>
 
         <x-site-footer />
     </div>

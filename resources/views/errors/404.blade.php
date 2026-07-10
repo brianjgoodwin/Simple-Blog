@@ -12,14 +12,14 @@
     @vite(['resources/css/app.css'])
 </head>
 <body class="bg-white text-gray-900 antialiased">
-    <div class="max-w-xl mx-auto px-4 py-24">
+    <main class="max-w-xl mx-auto px-4 py-24">
         <h1 class="text-3xl font-bold">{{ __('Not found') }}</h1>
         <p class="mt-4 text-gray-600">
             {{ __("There's nothing at this address.") }}
         </p>
         <p class="mt-8 text-sm text-gray-600">
-            <a href="{{ url('/') }}" class="hover:underline">{{ __('Back to home') }}</a>
+            <a href="{{ url('/') }}" class="underline decoration-gray-300 hover:decoration-current">{{ __('Back to home') }}</a>
         </p>
-    </div>
+    </main>
 </body>
 </html>

@@ -2,7 +2,9 @@
     <article>
         <h1 class="text-3xl font-bold">{{ $post->title }}</h1>
         <p class="text-sm text-gray-500 mt-2 mb-8">
-            {{ $post->published_at->format('F j, Y') }}
+            <time datetime="{{ $post->published_at->toDateString() }}">
+                {{ $post->published_at->format('F j, Y') }}
+            </time>
         </p>
 
         {{-- Rendered through App\Support\Markdown: raw HTML stripped, unsafe
