@@ -469,7 +469,19 @@ export format honest. Not v1 of this phase — export alone ships value.
 posts NEVER appear (same scoping guarantee as the dashboard); front-matter
 round-trips a post with quotes/colons/unicode in the title.
 
-### Phase 14 — Operator hardening (SKETCH — designed 2026-07-11; sequence BEFORE Phase 11 ships)
+### Phase 14 — Operator hardening (DONE — built & deployed 2026-07-11)
+Shipped as sketched (commit fec58c0): nullable `suspended_at` (NOT fillable),
+`author:suspend`/`author:unsuspend`, 404 guards at every public entry point
+(guard verified to fail when removed), login rejected with generic
+auth.failed + limiter hit, `EnsureAuthorNotSuspended` ends existing sessions
+on next request (file session driver = no per-user session destruction, so
+next-request is the honest design). `PublicContentSecurityPolicy` on all
+reader-facing routes, skipped when Vite is hot; known gap: binding-layer
+404s carry no header (no content to protect there). `/acceptable-use` live,
+linked from landing. 13 tests, 112 total green. SECURITY.md updated
+(CSP deferral closed, operator-controls section). Prod migration ran clean.
+REMINDER FOR PHASE 11: link /acceptable-use from the register page, and the
+invite flow's Phase 11 unblock condition is now met. Original sketch follows.
 The moment invites land, this stops being a blog and becomes hosting: other
 people's words, under Brian's name, on Brian's server. Phase 11 must not go
 live before this exists. Numbered 14 by creation order, sequenced before 11.
@@ -605,8 +617,8 @@ your readers" is a feature we get by doing nothing, forever.
 
 **Suggested pickup order across the sketches (2026-07-11):** Markdown
 caching is DECIDED (Option A — see above; build it with or just before
-Phase 12) → Phase 13 export (DONE 2026-07-11) → Phase 14 hardening →
-Phase 11 invites →
+Phase 12) → Phase 13 export (DONE 2026-07-11) → Phase 14 hardening (DONE
+2026-07-11) → Phase 11 invites →
 Phase 12 feed (+ body_html implementation + microformats/sitemap riders) →
 archive page → the rest as mood strikes. Phases 10 (appearance) and the
 other smaller sketches slot in anywhere.
