@@ -526,6 +526,52 @@ Each is self-contained and roughly a session or less; none blocks anything.
   with `trustHosts`, per-domain canonical URLs in feeds/OG tags. Filed as
   someday; this is where the project's philosophy ultimately points.
 
+### Open decision — Markdown render caching (walkthrough 2026-07-10, documented 2026-07-11, awaiting Brian's call)
+Referenced throughout the sketches above; the actual options live here. The
+problem: public pages render Markdown → HTML on every request. The river
+renders 10 full bodies per hit, and Phase 12 feeds will re-render every body
+on every non-304 poll, forever, against single-process `artisan serve`.
+Trivial today (one author, low traffic); the feed changes the math.
+
+**Option A — `body_html` column (RECOMMENDED):**
+- Nullable `body_html` on posts, filled from `App\Support\Markdown` in the
+  single write path whenever `body` is saved. Public pages, river, and feed
+  read the column; `body` (Markdown) stays the canonical content — which is
+  also what export (Phase 13) and FTS search want.
+- Plus `posts:rerender` artisan command: re-runs the pipeline over all posts.
+  Run it whenever the pipeline itself changes (a Phase-9-style heading shift,
+  a CommonMark upgrade) — that's the whole invalidation story. No TTLs, no
+  cache keys, deterministic, survives restarts, costs one column in a
+  database that already holds the content.
+- Honest cost: stored HTML can drift from `body` if a write path ever skips
+  the render. Mitigation is architectural — exactly one place writes posts —
+  plus a test asserting save populates `body_html`.
+
+**Option B — `Cache::remember` around the render:**
+- Key on `post-{id}-{updated_at}`, file cache driver. No migration, no
+  command. But: adds invalidation semantics where Option A has none, cold
+  cache after every `cache:clear`/deploy re-renders everything (feed polling
+  hits exactly then), and the cache is a second copy of truth rather than a
+  column sitting next to its source. More moving parts for a worse
+  guarantee.
+
+**Option C — defer, render per request:**
+- Legitimate at current scale. Stops being legitimate at Phase 12: feeds are
+  the first client that polls unattended. If feeds ship, this option
+  expires.
+
+**Why A wins:** the app's whole character is "state lives in SQLite, plainly."
+A cached column with an explicit re-render command matches that; a cache
+layer with TTL semantics doesn't. Interactions already noted in the
+sketches: Phase 10 themes are CSS-only so cached HTML is theme-independent;
+Phase 9's heading shift happened before caching exists, so nothing needed
+invalidating; FTS search wants source Markdown, which stays canonical
+either way.
+
+**What "deciding" looks like:** Brian picks A/B/C. If A: migration +
+observer-or-mutator + `posts:rerender` + tests, roughly half a session,
+ideally landing immediately before Phase 12.
+
 ### Deliberately never (the restraint is a feature)
 Stated here so future-us doesn't add one innocently. These aren't hard to
 build — they're the mechanism by which walled gardens made writing
