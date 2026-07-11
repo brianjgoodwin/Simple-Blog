@@ -428,7 +428,14 @@ is a new place for the drafts-never-leak guarantee to fail.
    never re-surface). Recommendation: honest `updated_at`. Brian's call.
 2. Do the OG meta tags ride along here or become their own line item?
 
-### Phase 13 — Author export (SKETCH — designed 2026-07-11, not scheduled)
+### Phase 13 — Author export (DONE — built & deployed 2026-07-11)
+Shipped as sketched (commit 5d9985a): `App\Support\PostExporter` +
+single-action `ExportController` at `GET /dashboard/export`, Export card on
+the dashboard, six tests (99 total green). Title front-matter is
+JSON-encoded (a JSON string is a valid YAML scalar — no hand-rolled
+escaping). The cross-author scoping test was verified to fail when scoping
+is deliberately broken. Prod deploy required `route:cache` (new route).
+Original sketch follows.
 The feature that IS the project's philosophy: if the pitch is "escape walled
 gardens," the acid test is whether authors can escape US. Every author can
 download everything they've written, in the format they wrote it, at any time.
@@ -598,7 +605,8 @@ your readers" is a feature we get by doing nothing, forever.
 
 **Suggested pickup order across the sketches (2026-07-11):** Markdown
 caching is DECIDED (Option A — see above; build it with or just before
-Phase 12) → Phase 13 export → Phase 14 hardening → Phase 11 invites →
+Phase 12) → Phase 13 export (DONE 2026-07-11) → Phase 14 hardening →
+Phase 11 invites →
 Phase 12 feed (+ body_html implementation + microformats/sitemap riders) →
 archive page → the rest as mood strikes. Phases 10 (appearance) and the
 other smaller sketches slot in anywhere.
