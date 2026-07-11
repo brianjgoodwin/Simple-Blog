@@ -28,7 +28,20 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'suspended_at' => 'datetime',
         ];
+    }
+
+    /**
+     * Has this author been suspended by the operator?
+     *
+     * A suspended author's blog 404s everywhere public and they cannot log
+     * in — publicly indistinguishable from an account that never existed
+     * (the same posture as drafts). Suspend/unsuspend via artisan.
+     */
+    public function isSuspended(): bool
+    {
+        return $this->suspended_at !== null;
     }
 
     /**

@@ -50,6 +50,20 @@ class LoginRequest extends FormRequest
             ]);
         }
 
+        // A suspended author cannot log in. The error is the SAME generic
+        // auth.failed as a wrong password, and the rate limiter is hit just
+        // like a failure: to anyone probing the form, a suspended account is
+        // indistinguishable from one that never existed (the 404 posture,
+        // applied to login).
+        if (Auth::user()->isSuspended()) {
+            Auth::logout();
+            RateLimiter::hit($this->throttleKey());
+
+            throw ValidationException::withMessages([
+                'email' => trans('auth.failed'),
+            ]);
+        }
+
         RateLimiter::clear($this->throttleKey());
     }
 

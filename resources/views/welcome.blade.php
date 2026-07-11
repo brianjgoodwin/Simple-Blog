@@ -23,6 +23,8 @@
 
             <p class="mt-4 text-gray-600">
                 {{ __('A small, invite-only home for writing. Each author keeps one blog.') }}
+                {{ __('No analytics, no tracking, no ads —') }}
+                <a href="{{ route('acceptable-use') }}" class="underline decoration-gray-300 hover:decoration-current">{{ __('how this place works') }}</a>.
             </p>
 
             <p class="mt-8 text-sm text-gray-600">

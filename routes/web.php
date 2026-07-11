@@ -7,15 +7,24 @@ use App\Http\Controllers\PostController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\PublicBlogController;
 use App\Http\Controllers\PublishController;
+use App\Http\Middleware\EnsureAuthorNotSuspended;
+use App\Http\Middleware\PublicContentSecurityPolicy;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/', function () {
-    return view('welcome');
+Route::middleware(PublicContentSecurityPolicy::class)->group(function () {
+    Route::get('/', function () {
+        return view('welcome');
+    });
+
+    Route::get('/acceptable-use', function () {
+        return view('acceptable-use');
+    })->name('acceptable-use');
 });
 
 // The author's private workspace. No 'verified' middleware: this is an
-// invite-only host with no email-verification flow.
-Route::middleware('auth')->group(function () {
+// invite-only host with no email-verification flow. EnsureAuthorNotSuspended
+// ends the session of an author suspended after logging in.
+Route::middleware(['auth', EnsureAuthorNotSuspended::class])->group(function () {
     // Dashboard landing page = the posts index.
     Route::get('/dashboard', [PostController::class, 'index'])->name('dashboard');
 
@@ -63,10 +72,14 @@ require __DIR__.'/auth.php';
 */
 Route::pattern('author', '[a-z0-9_]+');
 
-Route::get('/@{author}', [PublicBlogController::class, 'home'])->name('blog.home');
+// The strict CSP applies to the whole reader-facing surface (see the
+// middleware for why the dashboard is excluded).
+Route::middleware(PublicContentSecurityPolicy::class)->group(function () {
+    Route::get('/@{author}', [PublicBlogController::class, 'home'])->name('blog.home');
 
-// Reserved page words, declared before the catch-all {slug} post route.
-Route::get('/@{author}/about', [PublicBlogController::class, 'about'])->name('blog.about');
-Route::get('/@{author}/links', [PublicBlogController::class, 'links'])->name('blog.links');
+    // Reserved page words, declared before the catch-all {slug} post route.
+    Route::get('/@{author}/about', [PublicBlogController::class, 'about'])->name('blog.about');
+    Route::get('/@{author}/links', [PublicBlogController::class, 'links'])->name('blog.links');
 
-Route::get('/@{author}/{slug}', [PublicBlogController::class, 'post'])->name('blog.post');
+    Route::get('/@{author}/{slug}', [PublicBlogController::class, 'post'])->name('blog.post');
+});

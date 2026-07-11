@@ -9,8 +9,8 @@ use Illuminate\View\View;
  * The public, reader-facing blog at /@{username}.
  *
  * Only PUBLISHED posts are ever listed or reachable here. Drafts, unknown
- * users, and unknown slugs all return a 404 — never a 403 — so the existence
- * of a draft is never leaked.
+ * users, unknown slugs, and SUSPENDED authors all return a 404 — never a
+ * 403 — so the existence of a draft (or a suspension) is never leaked.
  */
 class PublicBlogController extends Controller
 {
@@ -22,6 +22,8 @@ class PublicBlogController extends Controller
      */
     public function home(User $author): View
     {
+        $this->abortIfSuspended($author);
+
         return view('public.home', [
             'author' => $author,
             'posts' => $author->posts()
@@ -39,6 +41,8 @@ class PublicBlogController extends Controller
      */
     public function post(User $author, string $slug): View
     {
+        $this->abortIfSuspended($author);
+
         $post = $author->posts()
             ->published()
             ->where('slug', $slug)
@@ -71,11 +75,24 @@ class PublicBlogController extends Controller
      */
     private function page(User $author, string $slug): View
     {
+        $this->abortIfSuspended($author);
+
         $page = $author->pages()->where('slug', $slug)->firstOrFail();
 
         return view('public.page', [
             'author' => $author,
             'page' => $page,
         ]);
+    }
+
+    /**
+     * A suspended author's blog is publicly indistinguishable from one that
+     * never existed. Every public entry point calls this FIRST, before any
+     * content query — a new public route (e.g. the Phase 12 feed) must do
+     * the same.
+     */
+    private function abortIfSuspended(User $author): void
+    {
+        abort_if($author->isSuspended(), 404);
     }
 }

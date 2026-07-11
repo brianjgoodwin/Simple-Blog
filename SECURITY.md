@@ -100,14 +100,35 @@ deployment-side controls:
 
 - No rate limiting on public reader routes (it's read-only, invite-only host).
   Login and password-reset ARE throttled (Breeze: 5/min login, 6/min reset).
-- No Content-Security-Policy header. Now that it's behind Caddy, the natural place
-  to add one is a header in the Caddy block — belt-and-suspenders on top of the
-  Markdown stripping.
+- ~~No Content-Security-Policy header.~~ DONE 2026-07-11 (Phase 14): a strict
+  CSP (`default-src 'none'` + narrow allowances) is set by app middleware on
+  all reader-facing routes — see `PublicContentSecurityPolicy` for the policy,
+  its rationale, and the accepted binding-layer 404 gap. The authenticated
+  dashboard is deliberately not covered (Alpine needs eval-style evaluation;
+  Breeze loads webfonts) — a weaker dashboard policy remains open.
 - **`trustProxies` still trusts the whole `172.18.0.0/16`**, not just Caddy's
   gateway `172.18.0.1`. `trustHosts` closes the exploitable path, so residual risk
   is low, but narrowing the range is the more principled fix — do it next time the
   proxy config is touched, and especially before running any *untrusted* container
   on that Docker network.
+
+## Operator controls (Phase 14, 2026-07-11)
+
+Added before invite codes (Phase 11) ever open registration — the moment
+other people can publish here, the operator needs a lever:
+
+- **Suspension:** `php artisan author:suspend {username}` / `author:unsuspend`.
+  One nullable `suspended_at` timestamp (not fillable — can never be set from
+  request input). A suspended author's blog 404s everywhere public
+  (indistinguishable from never existing — same posture as drafts), login
+  fails with the same generic error as a wrong password, and existing
+  sessions are ended on the next authenticated request
+  (`EnsureAuthorNotSuspended` middleware). Content is untouched; unsuspend
+  restores everything.
+- **CSP:** see the deferrals list above — now implemented for the public
+  surface.
+- **Acceptable use:** `/acceptable-use`, linked from the landing page. Makes
+  suspension a policy action, and states the no-analytics posture publicly.
 
 ## Audit log
 
