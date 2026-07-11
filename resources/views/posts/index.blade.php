@@ -88,6 +88,19 @@
                 </div>
             </div>
 
+            {{-- Export --}}
+            <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg">
+                <div class="p-6 text-gray-900">
+                    <h3 class="text-lg font-medium mb-4">{{ __('Export') }}</h3>
+                    <p class="text-gray-500 mb-4">
+                        {{ __('Everything you\'ve written — posts, drafts, and pages — as plain Markdown files. Your words are yours.') }}
+                    </p>
+                    <a href="{{ route('export') }}" class="text-gray-800 underline decoration-gray-300 hover:decoration-current">
+                        {{ __('Download export (.zip)') }}
+                    </a>
+                </div>
+            </div>
+
         </div>
     </div>
 </x-app-layout>

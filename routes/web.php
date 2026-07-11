@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\ExportController;
 use App\Http\Controllers\MarkdownPreviewController;
 use App\Http\Controllers\PageController;
 use App\Http\Controllers\PostController;
@@ -39,6 +40,9 @@ Route::middleware('auth')->group(function () {
         // Pages (About, Links) are edited by slug, scoped to the author.
         Route::get('pages/{slug}/edit', [PageController::class, 'edit'])->name('pages.edit');
         Route::put('pages/{slug}', [PageController::class, 'update'])->name('pages.update');
+
+        // Export: everything the author has written, as a zip of Markdown.
+        Route::get('export', ExportController::class)->name('export');
     });
 
     // Breeze profile management (kept at /profile).
