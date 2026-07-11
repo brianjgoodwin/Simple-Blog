@@ -526,7 +526,11 @@ Each is self-contained and roughly a session or less; none blocks anything.
   with `trustHosts`, per-domain canonical URLs in feeds/OG tags. Filed as
   someday; this is where the project's philosophy ultimately points.
 
-### Open decision — Markdown render caching (walkthrough 2026-07-10, documented 2026-07-11, awaiting Brian's call)
+### DECIDED — Markdown render caching: Option A (chosen by Brian 2026-07-11)
+Decision made; not yet built. Implementation (~half a session: migration +
+single-write-path render + `posts:rerender` + tests) lands immediately
+before Phase 12 feeds, per the pickup order below. Options preserved for
+the record:
 Referenced throughout the sketches above; the actual options live here. The
 problem: public pages render Markdown → HTML on every request. The river
 renders 10 full bodies per hit, and Phase 12 feeds will re-render every body
@@ -568,9 +572,7 @@ Phase 9's heading shift happened before caching exists, so nothing needed
 invalidating; FTS search wants source Markdown, which stays canonical
 either way.
 
-**What "deciding" looks like:** Brian picks A/B/C. If A: migration +
-observer-or-mutator + `posts:rerender` + tests, roughly half a session,
-ideally landing immediately before Phase 12.
+**Decided:** Option A, per the reasoning above.
 
 ### Deliberately never (the restraint is a feature)
 Stated here so future-us doesn't add one innocently. These aren't hard to
@@ -594,12 +596,12 @@ your readers" is a feature we get by doing nothing, forever.
   (RSS was on this list; promoted to the Phase 12 sketch above.
   Archive/search/scheduling similarly promoted to Smaller sketches.)
 
-**Suggested pickup order across the sketches (2026-07-11):** settle the
-Markdown/body_html caching decision first (it keeps accruing dependents:
-feeds, sitemap, search) → Phase 13 export → Phase 14 hardening → Phase 11
-invites → Phase 12 feed (+ microformats/sitemap riders) → archive page →
-the rest as mood strikes. Phases 10 (appearance) and the other smaller
-sketches slot in anywhere.
+**Suggested pickup order across the sketches (2026-07-11):** Markdown
+caching is DECIDED (Option A — see above; build it with or just before
+Phase 12) → Phase 13 export → Phase 14 hardening → Phase 11 invites →
+Phase 12 feed (+ body_html implementation + microformats/sitemap riders) →
+archive page → the rest as mood strikes. Phases 10 (appearance) and the
+other smaller sketches slot in anywhere.
 
 ---
 
