@@ -36,6 +36,7 @@ not a blogging platform.
 | Unpublish | Allowed; published → draft reuses the same frozen slug |
 | Visibility (v1) | Published = listed & public; drafts private. `unlisted` modeled-for, not built |
 | Account creation | `php artisan` command (no admin UI in v1) |
+| Public pages | Work with JavaScript disabled — curl-able, archivable, readable in 20 years. True today by accident; locked so it stays true on purpose |
 
 ---
 
@@ -406,6 +407,12 @@ is a new place for the drafts-never-leak guarantee to fail.
   in the public layout; highest visible-impact-per-line item in the phase.
 - **sitemap.xml per blog** (optional) — same Blade-XML-over-published-posts
   shape as the feed; more discovery than follow.
+- **Microformats (h-entry / h-card)** — a handful of classes (`h-entry`,
+  `p-name`, `e-content`, `dt-published`, `h-card` on the author name) on HTML
+  we already render. Makes every blog machine-readable to the IndieWeb
+  ecosystem (readers, webmention senders, archivers) without building any of
+  that ecosystem ourselves. Near-zero cost; belongs in the same commit as
+  feed discovery links.
 
 **Explicitly out (look cheap, aren't):**
 - Email subscriptions — deliverability, unsubscribe compliance, address
@@ -421,12 +428,132 @@ is a new place for the drafts-never-leak guarantee to fail.
    never re-surface). Recommendation: honest `updated_at`. Brian's call.
 2. Do the OG meta tags ride along here or become their own line item?
 
+### Phase 13 — Author export (SKETCH — designed 2026-07-11, not scheduled)
+The feature that IS the project's philosophy: if the pitch is "escape walled
+gardens," the acid test is whether authors can escape US. Every author can
+download everything they've written, in the format they wrote it, at any time.
+Cheap precisely because of a founding decision — we never converted their
+words to anything else; the Markdown is sitting in a SQLite column.
+
+**Format — a zip of plain files, no proprietary manifest:**
+- One `.md` file per post (drafts included — they're the author's words too),
+  named by slug (drafts: slug-so-far or a title-derived fallback).
+- Minimal YAML front-matter per file: `title`, `slug`, `status`,
+  `published_at`, `created_at`, `updated_at`. Nothing app-specific — the
+  files should drop into Jekyll/Hugo/Kirby/anything with light massaging.
+- `about.md` and `links.md` alongside.
+- No HTML in the zip: the Markdown is the canonical form; rendered HTML is
+  our presentation, not their content.
+
+**Mechanics:**
+- One button on the dashboard (or profile page): `GET /dashboard/export` →
+  streamed `ZipArchive` response, auth'd, scoped to the logged-in user.
+  No queue, no temp-file lifecycle if we stream; a blog of hundreds of
+  Markdown posts zips in well under a second.
+- Serves double duty as the author's personal backup — the systemd backup
+  covers Brian against disk loss; export covers authors against Brian
+  losing interest in 2029.
+
+**Import (the natural sequel, separate line item):** accept the same zip
+back. Gives migration between instances for free and forces us to keep the
+export format honest. Not v1 of this phase — export alone ships value.
+
+**Tests that matter:** export contains drafts + pages; another author's
+posts NEVER appear (same scoping guarantee as the dashboard); front-matter
+round-trips a post with quotes/colons/unicode in the title.
+
+### Phase 14 — Operator hardening (SKETCH — designed 2026-07-11; sequence BEFORE Phase 11 ships)
+The moment invites land, this stops being a blog and becomes hosting: other
+people's words, under Brian's name, on Brian's server. Phase 11 must not go
+live before this exists. Numbered 14 by creation order, sequenced before 11.
+
+**1. Suspend/unsuspend tooling (artisan, matching author:create — no UI):**
+- `author:suspend {username}` / `author:unsuspend {username}` — a nullable
+  `suspended_at` timestamp on users (same one-fact pattern as invites'
+  `used_at`; no status enum).
+- Suspended blog = 404 everywhere public (home, posts, pages, feed) — the
+  existing 404-not-403 posture extended: a suspended blog is
+  indistinguishable from one that never existed. Suspended author can't log
+  in (or is logged out via session invalidation) — decide at build time.
+- This is the difference between handling a problem at 11pm with a command
+  and hand-editing production SQLite while stressed.
+
+**2. Content-Security-Policy header on public pages:**
+- The Markdown pipeline strips HTML and tests pin that — CSP is the backstop
+  for the day a CommonMark CVE or a future feature pokes a hole in it.
+  Defense in depth is cheap here BECAUSE the pages are so simple; a strict
+  CSP that would be agony on a JS-heavy site is nearly free on ours.
+- Middleware on the public routes; roughly `default-src 'none'; style-src
+  'self'; img-src 'self'; base-uri 'none'; form-action 'self'` — exact
+  directives verified at build time against what the pages actually load
+  (Vite asset origin, any inline styles Breeze/Alpine need on authed pages —
+  which is why this starts public-routes-only).
+- Test: response header present on `/@user` and absent nothing breaks —
+  plus a manual pass with the browser console open (CSP violations are
+  loud there).
+
+**3. Acceptable-use paragraph (one paragraph, not legal theater):**
+- Written and linked from the register page before the first invite goes
+  out. Its real function: makes suspending someone a policy action instead
+  of a personal fight with a friend. Also states the no-analytics posture
+  out loud (see "Deliberately never" below).
+
+### Smaller sketches (designed 2026-07-11, not scheduled)
+Each is self-contained and roughly a session or less; none blocks anything.
+
+- **Archive page** — `/@{username}/archive`: every published title,
+  chronological, grouped by year. The river shows recent writing; the
+  archive makes a blog feel like a body of work. One query, one template.
+  Link from blog nav. Same drafts-never-appear test as home.
+- **Post scheduling** — `status`+`published_at` already model it: publish
+  with a future timestamp, public scopes become `published_at <= now()`,
+  slug freezes at the moment of *scheduling* (it's leaving the author's
+  hands). CATCH: "goes live" needs no process at all with the scope
+  approach (time passes, query starts matching) — but autosave-vs-published
+  rules and the composer UI need a third mental state, and the feed's
+  Last-Modified math must use `max(published_at where <= now())`. Cheap
+  mechanically, subtle at the edges — sketch says: don't rush it.
+- **Per-blog search** — SQLite ships FTS5, so full-text search costs no new
+  infrastructure — one of the rare stacks where this is true. External
+  content table synced from posts (or contentless FTS over body), search
+  box on the blog home, published-only (the guarantee again). Middling
+  priority; high fun-per-line. Interacts with the body_html decision only
+  in that FTS wants the SOURCE Markdown, another vote for keeping `body`
+  canonical.
+- **Custom domains per author** — the long-horizon ethos feature: nothing
+  says "you own this" like `theirname.com` on their blog. Real work — Caddy
+  on-demand TLS, a verified `domain` column, host-based routing coexisting
+  with `trustHosts`, per-domain canonical URLs in feeds/OG tags. Filed as
+  someday; this is where the project's philosophy ultimately points.
+
+### Deliberately never (the restraint is a feature)
+Stated here so future-us doesn't add one innocently. These aren't hard to
+build — they're the mechanism by which walled gardens made writing
+performative, and their absence is this project's differentiator:
+
+- View counters, likes, reactions, follower counts
+- Trending / recommended / algorithmic anything
+- Analytics on authors or readers (no tracking scripts, no server-side
+  pageview logging beyond standard access logs)
+
+Say it in the README and the acceptable-use page: "no analytics on you or
+your readers" is a feature we get by doing nothing, forever.
+
 ### Deferred (modeled-for, not built)
 - `unlisted` post state
 - Admin UI for account creation
 - Username change + redirects
+- Author-facing import of the Phase 13 export zip (export ships first)
 - Images, tags, comments — explicitly out of scope for v1
-  (RSS was on this list; promoted to the Phase 12 sketch above)
+  (RSS was on this list; promoted to the Phase 12 sketch above.
+  Archive/search/scheduling similarly promoted to Smaller sketches.)
+
+**Suggested pickup order across the sketches (2026-07-11):** settle the
+Markdown/body_html caching decision first (it keeps accruing dependents:
+feeds, sitemap, search) → Phase 13 export → Phase 14 hardening → Phase 11
+invites → Phase 12 feed (+ microformats/sitemap riders) → archive page →
+the rest as mood strikes. Phases 10 (appearance) and the other smaller
+sketches slot in anywhere.
 
 ---
 
