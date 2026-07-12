@@ -539,6 +539,22 @@ Each is self-contained and roughly a session or less; none blocks anything.
   priority; high fun-per-line. Interacts with the body_html decision only
   in that FTS wants the SOURCE Markdown, another vote for keeping `body`
   canonical.
+- **Blog description + light SEO (sketched 2026-07-12)** — one nullable,
+  author-editable `description` column on users (~160-char guidance in the
+  settings form) feeding `<meta name="description">` and `og:description`
+  on that blog's pages, the Phase 12 Atom `<subtitle>`, and the h-card
+  note. Optional companion toggle: per-author search-engine opt-out via
+  `<meta name="robots" content="noindex">` on their pages — deliberately
+  NOT a robots.txt Disallow, for two reasons: a Disallow blocks crawling so
+  the noindex is never seen (bare URLs can still be listed), and per-author
+  Disallow lines turn robots.txt into a public directory of who opted out.
+  A noindexed author is also excluded from any future sitemap. The settings
+  screen should say plainly: description + semantic HTML + sitemap IS the
+  whole legitimate SEO story here. DROPPED (Brian, 2026-07-12): per-author
+  *AI-crawler* opt-out — the only mechanism with real adoption is robots.txt
+  user-agent groups (GPTBot, CCBot, …), which both rots as a list and
+  enumerates opted-out usernames publicly; too much complexity for too
+  little payoff. Shares the author-settings form Phase 10 introduces.
 - **Custom domains per author** — the long-horizon ethos feature: nothing
   says "you own this" like `theirname.com` on their blog. Real work — Caddy
   on-demand TLS, a verified `domain` column, host-based routing coexisting
@@ -602,6 +618,8 @@ performative, and their absence is this project's differentiator:
 - Trending / recommended / algorithmic anything
 - Analytics on authors or readers (no tracking scripts, no server-side
   pageview logging beyond standard access logs)
+- A `<meta name="keywords">` field — ignored by every major search engine
+  since roughly 2009; offering it would be settings-theater
 
 Say it in the README and the acceptable-use page: "no analytics on you or
 your readers" is a feature we get by doing nothing, forever.
