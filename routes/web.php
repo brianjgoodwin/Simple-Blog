@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AppearanceController;
 use App\Http\Controllers\ExportController;
 use App\Http\Controllers\MarkdownPreviewController;
 use App\Http\Controllers\PageController;
@@ -52,6 +53,10 @@ Route::middleware(['auth', EnsureAuthorNotSuspended::class])->group(function () 
 
         // Export: everything the author has written, as a zip of Markdown.
         Route::get('export', ExportController::class)->name('export');
+
+        // Appearance: theme + font for the author's public blog.
+        Route::get('appearance', [AppearanceController::class, 'edit'])->name('appearance.edit');
+        Route::put('appearance', [AppearanceController::class, 'update'])->name('appearance.update');
     });
 
     // Breeze profile management (kept at /profile).

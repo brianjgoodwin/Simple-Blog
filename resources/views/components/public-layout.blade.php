@@ -11,22 +11,28 @@
     <title>{{ isset($title) ? $title.' — '.$author->name : $author->name }}</title>
     @vite(['resources/css/app.css'])
 </head>
-<body class="bg-white text-gray-900 antialiased">
+{{-- The theme is ONLY this data-theme attribute plus the font class — the
+     CSS variables in app.css say what each theme means. Post HTML is
+     byte-identical across themes (a locked Phase 10 decision). The font
+     classes are written out literally because Tailwind's compile-time scan
+     can't see interpolated class names. --}}
+<body data-theme="{{ $author->theme->value }}"
+      class="bg-theme text-gray-900 antialiased {{ $author->font === \App\Enums\BlogFont::Serif ? 'font-serif' : 'font-sans' }}">
     <div class="max-w-xl mx-auto px-4 py-12">
 
-        <header class="mb-10 pb-6 border-b">
+        <header class="mb-10 pb-6 border-b border-theme">
             {{-- The blog name is the <h1> on the home page only; on post
                  and About/Links pages the content provides its own h1, and
                  two would compete. Same link either way. --}}
             @if ($homepage)
                 <h1 class="text-2xl font-bold">
-                    <a href="{{ route('blog.home', $author) }}" class="hover:underline">
+                    <a href="{{ route('blog.home', $author) }}" class="text-accent hover:underline">
                         {{ $author->name }}
                     </a>
                 </h1>
             @else
                 <p class="text-2xl font-bold">
-                    <a href="{{ route('blog.home', $author) }}" class="hover:underline">
+                    <a href="{{ route('blog.home', $author) }}" class="text-accent hover:underline">
                         {{ $author->name }}
                     </a>
                 </p>
@@ -35,9 +41,9 @@
                  so hover-only underlines left no at-rest cue (and touch users
                  never see hover states). --}}
             <nav class="mt-3 flex gap-4 text-sm text-gray-600">
-                <a href="{{ route('blog.home', $author) }}" class="underline decoration-gray-300 hover:decoration-current">{{ __('Posts') }}</a>
-                <a href="{{ route('blog.about', $author) }}" class="underline decoration-gray-300 hover:decoration-current">{{ __('About') }}</a>
-                <a href="{{ route('blog.links', $author) }}" class="underline decoration-gray-300 hover:decoration-current">{{ __('Links') }}</a>
+                <a href="{{ route('blog.home', $author) }}" class="underline decoration-theme hover:decoration-current">{{ __('Posts') }}</a>
+                <a href="{{ route('blog.about', $author) }}" class="underline decoration-theme hover:decoration-current">{{ __('About') }}</a>
+                <a href="{{ route('blog.links', $author) }}" class="underline decoration-theme hover:decoration-current">{{ __('Links') }}</a>
             </nav>
         </header>
 

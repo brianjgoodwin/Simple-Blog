@@ -3,6 +3,8 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Enums\BlogFont;
+use App\Enums\Theme;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -19,6 +21,19 @@ class User extends Authenticatable
     use HasFactory, Notifiable;
 
     /**
+     * Mirrors the database defaults so a User that hasn't been refreshed
+     * from the DB still has usable appearance settings. Like suspended_at,
+     * theme and font are deliberately NOT fillable — AppearanceController
+     * assigns them explicitly after validating against the enums.
+     *
+     * @var array<string, string>
+     */
+    protected $attributes = [
+        'theme' => 'default',
+        'font' => 'sans',
+    ];
+
+    /**
      * Get the attributes that should be cast.
      *
      * @return array<string, string>
@@ -29,6 +44,8 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
             'suspended_at' => 'datetime',
+            'theme' => Theme::class,
+            'font' => BlogFont::class,
         ];
     }
 

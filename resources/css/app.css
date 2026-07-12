@@ -7,3 +7,81 @@
 [x-cloak] {
     display: none !important;
 }
+
+/* ---------------------------------------------------------------------------
+   Phase 10: public blog themes.
+
+   A theme is ONLY this block of custom properties — templates never change
+   per theme (rendered HTML is byte-identical), they reference the variables
+   through the utilities below. The :root values ARE the default theme and
+   exactly the pre-Phase-10 look, so pages without a data-theme attribute
+   (landing, 404, dashboard) are unaffected even where a utility is reused.
+
+   Every theme ships WCAG AA-verified (normal text >= 4.5:1 against the
+   theme background): body gray-900, nav gray-600, the theme's muted color,
+   and the theme's accent. Tinted themes darken the muted color because
+   gray-500 only clears AA on pure white (4.83:1) and fails on the tints
+   (~4.4:1). Underline and border colors are decorative (no WCAG minimum),
+   pitched to match the decoration-gray-300 precedent. Verify any new or
+   changed theme before shipping it; the check is four ratio computations,
+   not a judgment call. Theme::swatch() duplicates bg/accent for the
+   settings form's preview dots — keep it in sync.
+--------------------------------------------------------------------------- */
+:root {
+    --theme-bg: #ffffff;
+    --theme-accent: #111827;    /* gray-900 */
+    --theme-muted: #6b7280;     /* gray-500 */
+    --theme-underline: #d1d5db; /* gray-300 */
+    --theme-border: #e5e7eb;    /* gray-200 */
+}
+
+[data-theme="sage"] {
+    --theme-bg: #f3f6f3;
+    --theme-accent: #166534;    /* 6.55:1 on bg */
+    --theme-muted: #5d6673;     /* 5.34:1 on bg */
+    --theme-underline: #b3ccb3;
+    --theme-border: #d5e2d5;
+}
+
+[data-theme="dusk"] {
+    --theme-bg: #f3f5f9;
+    --theme-accent: #1e40af;    /* 7.99:1 on bg */
+    --theme-muted: #5d6673;     /* 5.32:1 on bg */
+    --theme-underline: #b9c6e2;
+    --theme-border: #d8dfee;
+}
+
+[data-theme="dawn"] {
+    --theme-bg: #faf5eb;
+    --theme-accent: #9a3412;    /* 6.72:1 on bg */
+    --theme-muted: #5d6673;     /* 5.35:1 on bg */
+    --theme-underline: #dfc2a2;
+    --theme-border: #ecdcc0;
+}
+
+@layer components {
+    /* Links inside post/page bodies take the theme accent. The typography
+       plugin reads this variable; default #111827 matches its gray theme,
+       so untinted blogs render exactly as before. */
+    .prose {
+        --tw-prose-links: var(--theme-accent);
+    }
+}
+
+@layer utilities {
+    .bg-theme {
+        background-color: var(--theme-bg);
+    }
+    .text-accent {
+        color: var(--theme-accent);
+    }
+    .text-theme-muted {
+        color: var(--theme-muted);
+    }
+    .decoration-theme {
+        text-decoration-color: var(--theme-underline);
+    }
+    .border-theme {
+        border-color: var(--theme-border);
+    }
+}
