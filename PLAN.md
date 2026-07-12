@@ -259,7 +259,17 @@ Verify: full Pest suite + manual keyboard pass (tab through nav, dropdown,
 composer, pagination) + live check after deploy (`npm run build`,
 `view:clear`; no new routes so no `route:cache` concern).
 
-### Phase 10 — Blog appearance settings (SKETCH — designed 2026-07-10, not scheduled)
+### Phase 10 — Blog appearance settings (DONE — built & deployed 2026-07-12)
+Built as sketched (commit c9f6072): four themes (default / sage / dusk /
+dawn) + serif/sans toggle, settings form at /dashboard/appearance, enum
+columns not fillable, defaults = the pre-Phase-10 look exactly. The AA
+rule caught a real failure during the build: gray-500 muted text (dates,
+footer) clears 4.5:1 only on pure white — tinted themes darken muted text
+to #5d6673 via a --theme-muted variable. Adding a theme later: enum case +
+CSS block in app.css + matching Theme::swatch() hexes + the four-ratio
+contrast check (body gray-900, nav gray-600, muted, accent — all vs the
+theme background). Original sketch below, kept for the reasoning.
+
 Light per-author customization of the public blog. Deliberately small: a
 serif/sans toggle plus a handful of bundled, pre-verified themes. Roughly a
 one-session build; most of the work is choosing colors and verifying contrast.
@@ -636,10 +646,11 @@ your readers" is a feature we get by doing nothing, forever.
 **Suggested pickup order across the sketches (2026-07-11):** Markdown
 caching is DECIDED (Option A — see above; build it with or just before
 Phase 12) → Phase 13 export (DONE 2026-07-11) → Phase 14 hardening (DONE
-2026-07-11) → Phase 11 invites →
+2026-07-11) → Phase 10 appearance (DONE 2026-07-12) → Phase 11 invites →
 Phase 12 feed (+ body_html implementation + microformats/sitemap riders) →
-archive page → the rest as mood strikes. Phases 10 (appearance) and the
-other smaller sketches slot in anywhere.
+archive page → the rest as mood strikes. The remaining smaller sketches
+(archive, search, scheduling, description/SEO) slot in anywhere; the
+description/SEO sketch got cheaper now that the settings form exists.
 
 ---
 
