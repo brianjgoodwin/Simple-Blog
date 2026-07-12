@@ -22,7 +22,7 @@ after going live (2026-07-07) found four minor issues, all fixed — see the
 | Existence of a draft is leaked via 403 | Public routes never authorize — unknown = 404, never 403 |
 | XSS via author Markdown shown to readers | All bodies render through `App\Support\Markdown` (raw HTML stripped) |
 | Mass-assignment sets `user_id`/`slug`/`status` from request input | Those fields are not fillable; set server-side only |
-| Open registration | No `register` route or controller; accounts via `author:create` only |
+| Open registration | Register routes exist (Phase 11) but are gated by single-use ~70-bit invite codes; POST throttled 5/min/IP; `author:create` still works |
 | CSRF on dashboard forms | Default `web` middleware group + Breeze `@csrf`; no exclusions |
 | SQL injection | Eloquent everywhere; no raw SQL (`whereRaw`, `DB::select`, etc.) |
 
@@ -129,6 +129,34 @@ other people can publish here, the operator needs a lever:
   surface.
 - **Acceptable use:** `/acceptable-use`, linked from the landing page. Makes
   suspension a policy action, and states the no-analytics posture publicly.
+
+## Invite-gated registration (Phase 11, 2026-07-12)
+
+Registration was re-opened behind single-use invite codes — the code is the
+lock on an otherwise-unauthenticated account-creation endpoint. The
+load-bearing pieces:
+
+- **Entropy × throttle is the gate:** 12 characters from a 57-character
+  alphabet (~70 bits), POST throttled 5/min/IP (GET 30/min). Guessing a code
+  through the throttle is infeasible; that's also why code error messages
+  can be honest ("not valid" vs "already used") — unlike password reset,
+  there is nothing enumerable within reach.
+- **Atomic consumption:** user creation and the invite stamp happen in one
+  transaction; the stamp is a guarded `UPDATE ... WHERE used_at IS NULL`
+  whose row count is checked, so two racing submits can never both consume
+  one code (lockForUpdate() is also taken, but it is a no-op on SQLite —
+  the guarded update is the real fence).
+- **Codes are stored in plaintext deliberately:** hashed codes couldn't be
+  re-listed by `invite:list`, forcing code tracking into a text file — a
+  worse posture. Codes are single-use gate tokens, not passwords; an
+  attacker who can read `invites` can read `users`.
+- **Shared validation:** the web form uses `User::usernameRules()` and seeds
+  pages via `User::seedDefaultPages()` — the same code paths as
+  `author:create`, so a registered account is identical to an artisan-created
+  one (pinned by a test) and the rules cannot drift.
+- **No public link to /register** — the URL travels with the invite; the
+  landing page's "invite-only" copy stays truthful. The register page links
+  /acceptable-use (the Phase 14 precondition for opening registration).
 
 ## Audit log
 

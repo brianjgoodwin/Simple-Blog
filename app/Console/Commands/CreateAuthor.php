@@ -21,13 +21,6 @@ use function Laravel\Prompts\text;
 class CreateAuthor extends Command
 {
     /**
-     * The two pages every author starts with.
-     *
-     * @var array<int, string>
-     */
-    protected array $defaultPages = ['about', 'links'];
-
-    /**
      * Execute the console command.
      */
     public function handle(): int
@@ -68,7 +61,7 @@ class CreateAuthor extends Command
             ],
             [
                 'name' => ['required', 'string', 'max:255'],
-                'username' => ['required', 'string', 'lowercase', 'regex:/^[a-z0-9_]+$/', 'max:30', 'unique:users,username'],
+                'username' => User::usernameRules(),
                 'email' => ['required', 'email', 'max:255', 'unique:users,email'],
                 'password' => ['required', 'string', 'min:8'],
             ],
@@ -92,12 +85,7 @@ class CreateAuthor extends Command
                 'password' => $plainPassword, // hashed by the model's 'hashed' cast
             ]);
 
-            foreach ($this->defaultPages as $slug) {
-                $user->pages()->create([
-                    'slug' => $slug,
-                    'body' => '',
-                ]);
-            }
+            $user->seedDefaultPages();
 
             return $user;
         });

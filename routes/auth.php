@@ -7,12 +7,21 @@ use App\Http\Controllers\Auth\EmailVerificationPromptController;
 use App\Http\Controllers\Auth\NewPasswordController;
 use App\Http\Controllers\Auth\PasswordController;
 use App\Http\Controllers\Auth\PasswordResetLinkController;
+use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\Auth\VerifyEmailController;
 use Illuminate\Support\Facades\Route;
 
 Route::middleware('guest')->group(function () {
-    // Registration is intentionally disabled: this is an invite-only host.
-    // Accounts are created with the `author:create` artisan command.
+    // Registration is gated by single-use invite codes (Phase 11) — the
+    // code is the lock on this otherwise-open endpoint, and the throttle
+    // is what makes guessing one infeasible. No public page links here;
+    // the URL travels with the invite. author:create still works too.
+    Route::get('register', [RegisteredUserController::class, 'create'])
+        ->middleware('throttle:30,1')
+        ->name('register');
+
+    Route::post('register', [RegisteredUserController::class, 'store'])
+        ->middleware('throttle:5,1');
 
     Route::get('login', [AuthenticatedSessionController::class, 'create'])
         ->name('login');

@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Page;
+use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -17,11 +18,12 @@ use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 class PageController extends Controller
 {
     /**
-     * The pages a user is allowed to edit.
+     * The pages a user is allowed to edit — the same set every author is
+     * seeded with (one definition, on the model, so they can't drift).
      *
      * @var array<int, string>
      */
-    private const EDITABLE = ['about', 'links'];
+    private const EDITABLE = User::DEFAULT_PAGES;
 
     /**
      * Show the edit form for one of the author's pages.

@@ -21,6 +21,14 @@ class User extends Authenticatable
     use HasFactory, Notifiable;
 
     /**
+     * The pages every author starts with — also the only editable slugs
+     * (PageController) and the page files in an export.
+     *
+     * @var array<int, string>
+     */
+    public const DEFAULT_PAGES = ['about', 'links'];
+
+    /**
      * Mirrors the database defaults so a User that hasn't been refreshed
      * from the DB still has usable appearance settings. Like suspended_at,
      * theme and font are deliberately NOT fillable — AppearanceController
@@ -59,6 +67,32 @@ class User extends Authenticatable
     public function isSuspended(): bool
     {
         return $this->suspended_at !== null;
+    }
+
+    /**
+     * The canonical username validation rules, shared by every path that
+     * creates an account (author:create, invite registration). One copy,
+     * so the rules can never fork and drift.
+     *
+     * @return array<int, string>
+     */
+    public static function usernameRules(): array
+    {
+        return ['required', 'string', 'lowercase', 'regex:/^[a-z0-9_]+$/', 'max:30', 'unique:users,username'];
+    }
+
+    /**
+     * Seed the empty About and Links pages every new author starts with.
+     * Call inside the same transaction that creates the user.
+     */
+    public function seedDefaultPages(): void
+    {
+        foreach (self::DEFAULT_PAGES as $slug) {
+            $this->pages()->create([
+                'slug' => $slug,
+                'body' => '',
+            ]);
+        }
     }
 
     /**
