@@ -315,7 +315,20 @@ blog" link as the preview. No live preview in v1.
 - Layout options (column width, etc.) — against the opinionated character.
 - Author-supplied webfonts — external requests, licensing, and privacy.
 
-### Phase 11 — Invite codes (SKETCH — designed 2026-07-10, not scheduled)
+### Phase 11 — Invite codes (DONE — built & deployed 2026-07-12)
+Built as sketched (commit a0edc69). Open question RESOLVED by Brian: codes
+do NOT bind to an email — any code, any email, first-come-first-served;
+`note` is the memory aid. Codes are stored bare (12 chars) and formatted
+Xxxx-Xxxx-Xxxx only for display; consumption is a guarded
+`UPDATE ... WHERE used_at IS NULL` with its row count checked, because
+lockForUpdate() is a no-op on SQLite — the guarded update is the real
+race fence. Username rules and page seeding now live on User
+(usernameRules() / seedDefaultPages(), DEFAULT_PAGES shared with
+PageController's allow-list); a test pins that a registered account is
+identical to an author:create one. To invite someone:
+`php artisan invite:generate --note="for Dave"` and send the printed
+link. Original sketch below, kept for the reasoning.
+
 Reintroduce self-registration, gated by server-generated invite codes that
 Brian hand-distributes to testers. Framing matters: registration routes were
 REMOVED entirely (author:create is the only account path today), so this
@@ -646,7 +659,8 @@ your readers" is a feature we get by doing nothing, forever.
 **Suggested pickup order across the sketches (2026-07-11):** Markdown
 caching is DECIDED (Option A — see above; build it with or just before
 Phase 12) → Phase 13 export (DONE 2026-07-11) → Phase 14 hardening (DONE
-2026-07-11) → Phase 10 appearance (DONE 2026-07-12) → Phase 11 invites →
+2026-07-11) → Phase 10 appearance (DONE 2026-07-12) → Phase 11 invites
+(DONE 2026-07-12) →
 Phase 12 feed (+ body_html implementation + microformats/sitemap riders) →
 archive page → the rest as mood strikes. The remaining smaller sketches
 (archive, search, scheduling, description/SEO) slot in anywhere; the
