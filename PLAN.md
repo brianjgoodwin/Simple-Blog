@@ -623,11 +623,20 @@ Each is self-contained and roughly a session or less; none blocks anything.
   with `trustHosts`, per-domain canonical URLs in feeds/OG tags. Filed as
   someday; this is where the project's philosophy ultimately points.
 
-### DECIDED — Markdown render caching: Option A (chosen by Brian 2026-07-11)
-Decision made; not yet built. Implementation (~half a session: migration +
-single-write-path render + `posts:rerender` + tests) lands immediately
-before Phase 12 feeds, per the pickup order below. Options preserved for
-the record:
+### DECIDED — Markdown render caching: Option A (chosen by Brian 2026-07-11; BUILT 2026-07-17)
+Built as decided: nullable `body_html` on posts, filled from
+`App\Support\Markdown` in Post's single render path (a `saving` hook that
+re-renders whenever `body` is dirty — so the controller store/update, the
+composer autosave, the factory, and tinker all populate it, and it can't
+drift). A `bodyHtml` accessor returns an `HtmlString` so the public views
+echo `$post->body_html` with `{{ }}` — the safety lives in the render path,
+not the view. `php artisan posts:rerender` rebuilds every row after a
+pipeline change, using `withoutTimestamps` so a mechanical re-render never
+bumps `updated_at` (which the Phase 12 feed's `<updated>` will read). Six
+tests cover cache-on-save, update, XSS stripping, body-untouched saves, and
+the command. Pages keep rendering live (only two per blog, not polled). The
+migration backfills existing rows. Next: Phase 12 feed. Options preserved
+for the record:
 Referenced throughout the sketches above; the actual options live here. The
 problem: public pages render Markdown → HTML on every request. The river
 renders 10 full bodies per hit, and Phase 12 feeds will re-render every body

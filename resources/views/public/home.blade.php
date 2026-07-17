@@ -15,9 +15,11 @@
                 </a>
             </p>
 
-            {{-- Full body, rendered safely (raw HTML stripped, links sanitized). --}}
+            {{-- Full body, served from the cached render (see Post::renderBodyHtml):
+                 raw HTML stripped and links sanitized when it was stored, so the
+                 HtmlString is safe to emit unescaped. --}}
             <div class="prose">
-                {{ \App\Support\Markdown::toHtml($post->body) }}
+                {{ $post->body_html }}
             </div>
         </article>
     @empty

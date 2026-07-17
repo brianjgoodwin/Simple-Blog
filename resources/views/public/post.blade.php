@@ -7,10 +7,11 @@
             </time>
         </p>
 
-        {{-- Rendered through App\Support\Markdown: raw HTML stripped, unsafe
-             links neutralized. Safe to output unescaped. --}}
+        {{-- Served from the cached render (see Post::renderBodyHtml): raw HTML
+             stripped and unsafe links neutralized when it was stored, so the
+             HtmlString is safe to output unescaped. --}}
         <div class="prose">
-            {{ \App\Support\Markdown::toHtml($post->body) }}
+            {{ $post->body_html }}
         </div>
     </article>
 </x-public-layout>
