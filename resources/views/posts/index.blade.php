@@ -93,7 +93,7 @@
                 <div class="p-6 text-gray-900">
                     <h3 class="text-lg font-medium mb-4">{{ __('Appearance') }}</h3>
                     <p class="text-gray-500 mb-4">
-                        {{ __('How your public blog looks — a color theme and a font.') }}
+                        {{ __('Your public blog — a description, a color theme, and a font.') }}
                     </p>
                     <a href="{{ route('appearance.edit') }}" class="text-gray-800 underline decoration-gray-300 hover:decoration-current">
                         {{ __('Appearance settings') }}

@@ -20,6 +20,16 @@
                     @csrf
                     @method('PUT')
 
+                    <div>
+                        <x-input-label for="description" :value="__('Description')" />
+                        <x-text-input id="description" name="description" type="text" maxlength="200"
+                                      class="mt-1 block w-full" :value="old('description', $user->description)" />
+                        <p class="mt-1 text-sm text-gray-500">
+                            {{ __('A short tagline, shown under your blog name and as your feed subtitle. Optional.') }}
+                        </p>
+                        <x-input-error field="description" :messages="$errors->get('description')" class="mt-2" />
+                    </div>
+
                     <fieldset @error('theme') aria-describedby="theme-error" @enderror>
                         <legend class="text-lg font-medium">{{ __('Theme') }}</legend>
                         <p class="mt-1 text-sm text-gray-500">

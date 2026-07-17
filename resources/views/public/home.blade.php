@@ -1,4 +1,4 @@
-<x-public-layout :author="$author" :homepage="true">
+<x-public-layout :author="$author" :homepage="true" :description="$author->description">
     {{-- h-feed / h-entry: the river is machine-readable to IndieWeb readers and
          archivers using classes on markup we already render. --}}
     <div class="h-feed">

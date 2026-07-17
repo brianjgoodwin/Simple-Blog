@@ -61,6 +61,12 @@
                     </a>
                 </p>
             @endif
+            {{-- The tagline shows under the blog name on the home page only;
+                 it is the p-summary of the blog's h-card and the readable twin
+                 of the Atom <subtitle> / meta description. --}}
+            @if ($homepage && $author->description)
+                <p class="mt-2 text-theme-muted p-note">{{ $author->description }}</p>
+            @endif
             {{-- Persistent underlines: these links match the nav text color,
                  so hover-only underlines left no at-rest cue (and touch users
                  never see hover states). --}}

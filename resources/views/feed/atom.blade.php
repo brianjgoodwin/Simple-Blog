@@ -6,6 +6,9 @@
 {!! '<?xml version="1.0" encoding="UTF-8"?>'."\n" !!}
 <feed xmlns="http://www.w3.org/2005/Atom">
     <title>{{ $author->name }}</title>
+@if ($author->description)
+    <subtitle>{{ $author->description }}</subtitle>
+@endif
     <id>{{ route('blog.home', $author) }}</id>
     <link rel="alternate" type="text/html" href="{{ route('blog.home', $author) }}"/>
     <link rel="self" type="application/atom+xml" href="{{ route('blog.feed', $author) }}"/>

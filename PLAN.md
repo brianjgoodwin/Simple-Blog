@@ -444,13 +444,18 @@ commits: the feed, Open Graph meta, and the sitemap.
   article tags + a `Post::excerpt()` description on post pages.
 - **sitemap.xml** at `/@{username}/sitemap.xml` — home, About, Links, published
   posts; same published() scope and suspended guard.
+- **Blog description** — a nullable `description` column (max 200, not
+  fillable, blank stored as null), edited on the Appearance page. Shown under
+  the blog name on the home page, carried as the Atom `<subtitle>`, and used as
+  the home page's meta/OG description. Plain text, escaped on output (verified
+  with a `<`/`&`/quote value); this is what the sketch's `<subtitle>` needed.
 
 Open questions resolved: (1) `<updated>` uses honest `updated_at` — edits may
-re-surface a post, accepted as truthful; (2) OG rode along here. NOT built: a
-blog-description field (there's no column for it), so the Atom `<subtitle>` and
-a home-page description meta are deferred — add a `description` column + a
-settings field first. 13 tests across FeedTest/OpenGraphTest/SitemapTest; both
-XML documents verified well-formed with a parser. Original sketch follows.
+re-surface a post, accepted as truthful; (2) OG rode along here. The
+blog-description field (originally deferred for lack of a column) followed
+immediately, so nothing from the sketch is outstanding. 21 tests across
+FeedTest/OpenGraphTest/SitemapTest/BlogDescriptionTest; both XML documents
+verified well-formed with a parser. Original sketch follows.
 
 Promotes RSS out of the deferred list. One feed per blog; a "follow" story
 without accounts, email, or federation. One session as scoped, with the
