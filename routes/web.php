@@ -82,9 +82,11 @@ Route::pattern('author', '[a-z0-9_]+');
 Route::middleware(PublicContentSecurityPolicy::class)->group(function () {
     Route::get('/@{author}', [PublicBlogController::class, 'home'])->name('blog.home');
 
-    // Reserved page words, declared before the catch-all {slug} post route.
+    // Reserved words, declared before the catch-all {slug} post route so they
+    // resolve to their own handlers rather than being read as a post slug.
     Route::get('/@{author}/about', [PublicBlogController::class, 'about'])->name('blog.about');
     Route::get('/@{author}/links', [PublicBlogController::class, 'links'])->name('blog.links');
+    Route::get('/@{author}/feed', [PublicBlogController::class, 'feed'])->name('blog.feed');
 
     Route::get('/@{author}/{slug}', [PublicBlogController::class, 'post'])->name('blog.post');
 });

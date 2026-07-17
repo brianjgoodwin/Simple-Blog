@@ -3,6 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use Illuminate\Http\Request;
+use Illuminate\Http\Response;
+use Illuminate\Support\Carbon;
 use Illuminate\View\View;
 
 /**
@@ -52,6 +55,51 @@ class PublicBlogController extends Controller
             'author' => $author,
             'post' => $post,
         ]);
+    }
+
+    /**
+     * The blog's Atom feed: published posts only, newest first, capped at 20.
+     *
+     * Conditional GET is the point of the design. Readers poll this forever;
+     * we compute Last-Modified from the newest published-post timestamp with a
+     * single aggregate query (no bodies loaded) and answer If-Modified-Since
+     * with a bare 304 before rendering anything. Only a genuinely-changed feed
+     * pays the cost of loading and serializing 20 posts.
+     *
+     * The Last-Modified value is max(updated_at), matching the feed's honest
+     * <updated>: an edit re-stamps the feed and may re-surface a post, which we
+     * accept as truthful (a locked call — see PLAN.md Phase 12).
+     */
+    public function feed(Request $request, User $author): Response
+    {
+        $this->abortIfSuspended($author);
+
+        $lastModified = $author->posts()->published()->max('updated_at');
+
+        $response = new Response();
+        if ($lastModified !== null) {
+            $response->setLastModified(Carbon::parse($lastModified));
+        }
+
+        if ($response->isNotModified($request)) {
+            return $response; // 304, empty body — nothing further queried
+        }
+
+        $posts = $author->posts()
+            ->published()
+            ->latest('published_at')
+            ->limit(20)
+            ->get();
+
+        return $response
+            ->setContent(view('feed.atom', [
+                'author' => $author,
+                'posts' => $posts,
+                // Atom requires a feed-level <updated>; fall back to the
+                // author's creation time for a blog with nothing published yet.
+                'updated' => $lastModified ? Carbon::parse($lastModified) : $author->created_at,
+            ])->render())
+            ->header('Content-Type', 'application/atom+xml; charset=UTF-8');
     }
 
     /**

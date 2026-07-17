@@ -9,6 +9,10 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>{{ isset($title) ? $title.' — '.$author->name : $author->name }}</title>
+    {{-- Feed autodiscovery: readers and browser extensions find the Atom feed
+         from any of the author's pages. --}}
+    <link rel="alternate" type="application/atom+xml"
+          title="{{ $author->name }}" href="{{ route('blog.feed', $author) }}">
     @vite(['resources/css/app.css'])
 </head>
 {{-- The theme is ONLY this data-theme attribute plus the font class — the
@@ -24,15 +28,18 @@
             {{-- The blog name is the <h1> on the home page only; on post
                  and About/Links pages the content provides its own h1, and
                  two would compete. Same link either way. --}}
+            {{-- h-card on the author-name link makes the blog's owner
+                 machine-readable to the IndieWeb ecosystem; the link text is
+                 the implied p-name. --}}
             @if ($homepage)
                 <h1 class="text-2xl font-bold">
-                    <a href="{{ route('blog.home', $author) }}" class="text-accent hover:underline">
+                    <a href="{{ route('blog.home', $author) }}" class="text-accent hover:underline h-card">
                         {{ $author->name }}
                     </a>
                 </h1>
             @else
                 <p class="text-2xl font-bold">
-                    <a href="{{ route('blog.home', $author) }}" class="text-accent hover:underline">
+                    <a href="{{ route('blog.home', $author) }}" class="text-accent hover:underline h-card">
                         {{ $author->name }}
                     </a>
                 </p>
@@ -44,6 +51,7 @@
                 <a href="{{ route('blog.home', $author) }}" class="underline decoration-theme hover:decoration-current">{{ __('Posts') }}</a>
                 <a href="{{ route('blog.about', $author) }}" class="underline decoration-theme hover:decoration-current">{{ __('About') }}</a>
                 <a href="{{ route('blog.links', $author) }}" class="underline decoration-theme hover:decoration-current">{{ __('Links') }}</a>
+                <a href="{{ route('blog.feed', $author) }}" class="underline decoration-theme hover:decoration-current">{{ __('Feed') }}</a>
             </nav>
         </header>
 
