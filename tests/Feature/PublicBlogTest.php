@@ -129,6 +129,44 @@ test('an unknown slug returns 404', function () {
     $this->get('/@brian/does-not-exist')->assertNotFound();
 });
 
+test('a post page answers If-Modified-Since with a 304', function () {
+    $author = author();
+    Post::factory()->for($author)->published()->create(['slug' => 'cached-post']);
+
+    $lastModified = $this->get('/@brian/cached-post')->assertOk()->headers->get('Last-Modified');
+    expect($lastModified)->not->toBeNull();
+
+    $this->get('/@brian/cached-post', ['If-Modified-Since' => $lastModified])
+        ->assertStatus(304);
+});
+
+test('editing a post or the author invalidates the post page 304', function () {
+    $author = author();
+    $post = Post::factory()->for($author)->published()->create(['slug' => 'cached-post']);
+
+    $lastModified = $this->get('/@brian/cached-post')->headers->get('Last-Modified');
+
+    // An edit re-stamps the post (HTTP dates are 1s resolution, so travel).
+    $this->travel(1)->minutes();
+    $post->update(['body' => 'revised']);
+
+    $this->get('/@brian/cached-post', ['If-Modified-Since' => $lastModified])
+        ->assertOk()
+        ->assertSee('revised');
+
+    // A change to the author (name, description, theme) alters the page
+    // shell without touching the post — it must also invalidate. The 200
+    // (rather than 304) is the invalidation; the name renders in the shell.
+    $lastModified = $this->get('/@brian/cached-post')->headers->get('Last-Modified');
+    $this->travel(1)->minutes();
+    $author->name = 'Brian Renamed';
+    $author->save();
+
+    $this->get('/@brian/cached-post', ['If-Modified-Since' => $lastModified])
+        ->assertOk()
+        ->assertSee('Brian Renamed');
+});
+
 test('one author\'s post is not reachable under another author\'s username', function () {
     $a = author('alice');
     $b = author('bob');

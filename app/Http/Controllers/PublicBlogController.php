@@ -28,12 +28,16 @@ class PublicBlogController extends Controller
     {
         $this->abortIfSuspended($author);
 
+        // Only the columns the river renders. Since body_html landed, the
+        // Markdown source `body` is dead weight on every public read — it can
+        // be as large as the rendered HTML, so leaving it out roughly halves
+        // the row payload for a 10-post page.
         return view('public.home', [
             'author' => $author,
             'posts' => $author->posts()
                 ->published()
                 ->latest('published_at')
-                ->paginate(10),
+                ->paginate(10, ['id', 'title', 'slug', 'published_at', 'body_html']),
         ]);
     }
 
@@ -42,20 +46,37 @@ class PublicBlogController extends Controller
      *
      * The published() scope is what enforces "drafts are not public": a draft
      * slug simply won't be found here, yielding a 404.
+     *
+     * Conditional GET, same pattern as the feed: Laravel's default
+     * `Cache-Control: no-cache, private` makes browsers revalidate on every
+     * visit, so answering If-Modified-Since with a 304 lets repeat readers
+     * reuse their cached copy instead of re-downloading the page. Safe here
+     * (unlike the home river) because unpublish/delete makes the NEXT request
+     * 404 at firstOrFail, before any 304 can be served. Last-Modified takes
+     * the author's timestamp into account too: a name, description, or theme
+     * change alters the page shell without touching the post row.
      */
-    public function post(User $author, string $slug): View
+    public function post(Request $request, User $author, string $slug): Response
     {
         $this->abortIfSuspended($author);
 
+        // No `body`: the page renders the cached body_html only.
         $post = $author->posts()
             ->published()
             ->where('slug', $slug)
-            ->firstOrFail();
+            ->firstOrFail(['id', 'title', 'slug', 'published_at', 'updated_at', 'body_html']);
 
-        return view('public.post', [
+        $response = new Response();
+        $response->setLastModified($post->updated_at->max($author->updated_at));
+
+        if ($response->isNotModified($request)) {
+            return $response; // 304 — the reader's cached copy is current
+        }
+
+        return $response->setContent(view('public.post', [
             'author' => $author,
             'post' => $post,
-        ]);
+        ])->render());
     }
 
     /**
@@ -86,11 +107,12 @@ class PublicBlogController extends Controller
             return $response; // 304, empty body — nothing further queried
         }
 
+        // Only what the Atom template serializes — no Markdown source.
         $posts = $author->posts()
             ->published()
             ->latest('published_at')
             ->limit(20)
-            ->get();
+            ->get(['id', 'title', 'slug', 'published_at', 'updated_at', 'body_html']);
 
         return $response
             ->setContent(view('feed.atom', [
@@ -140,13 +162,15 @@ class PublicBlogController extends Controller
 
         $term = trim((string) $request->query('q', ''));
 
+        // The WHERE still matches against `body`; only the SELECT is narrowed
+        // (results render title, date, and a body_html-derived excerpt).
         $results = $term === ''
             ? null
             : $author->posts()
                 ->published()
                 ->search($term)
                 ->latest('published_at')
-                ->paginate(10)
+                ->paginate(10, ['id', 'title', 'slug', 'published_at', 'body_html'])
                 ->withQueryString();
 
         return view('public.search', [
