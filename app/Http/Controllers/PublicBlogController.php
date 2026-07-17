@@ -22,7 +22,7 @@ class PublicBlogController extends Controller
      * The author's blog home: full posts, newest first, paginated.
      *
      * Shows the complete body of each post inline (classic-blog "river"),
-     * 10 per page. Each post's title links to its own permalink for sharing.
+     * 5 per page. Each post's title links to its own permalink for sharing.
      */
     public function home(User $author): View
     {
@@ -31,13 +31,13 @@ class PublicBlogController extends Controller
         // Only the columns the river renders. Since body_html landed, the
         // Markdown source `body` is dead weight on every public read — it can
         // be as large as the rendered HTML, so leaving it out roughly halves
-        // the row payload for a 10-post page.
+        // the row payload per page.
         return view('public.home', [
             'author' => $author,
             'posts' => $author->posts()
                 ->published()
                 ->latest('published_at')
-                ->paginate(10, ['id', 'title', 'slug', 'published_at', 'body_html']),
+                ->paginate(5, ['id', 'title', 'slug', 'published_at', 'body_html']),
         ]);
     }
 

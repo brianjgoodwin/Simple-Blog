@@ -73,14 +73,14 @@ test('the blog home shows the full rendered body of each post', function () {
         ->assertSee('content in the river');
 });
 
-test('the blog home paginates at 10 posts per page', function () {
+test('the blog home paginates at 5 posts per page', function () {
     $author = author();
-    // 11 published posts -> 10 on page 1, 1 on page 2.
-    Post::factory()->for($author)->published()->count(11)->create();
+    // 6 published posts -> 5 on page 1, 1 on page 2.
+    Post::factory()->for($author)->published()->count(6)->create();
 
-    // Page 1 shows 10, and a pagination control to page 2.
+    // Page 1 shows 5, and a pagination control to page 2.
     $page1 = $this->get('/@brian')->assertOk();
-    expect($page1->viewData('posts')->count())->toBe(10);
+    expect($page1->viewData('posts')->count())->toBe(5);
     expect($page1->viewData('posts')->hasPages())->toBeTrue();
 
     // Page 2 shows the remaining 1.
