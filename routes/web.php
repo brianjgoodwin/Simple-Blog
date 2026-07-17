@@ -20,6 +20,10 @@ Route::middleware(PublicContentSecurityPolicy::class)->group(function () {
     Route::get('/acceptable-use', function () {
         return view('acceptable-use');
     })->name('acceptable-use');
+
+    Route::get('/privacy', function () {
+        return view('privacy');
+    })->name('privacy');
 });
 
 // The author's private workspace. No 'verified' middleware: this is an
@@ -86,6 +90,7 @@ Route::middleware(PublicContentSecurityPolicy::class)->group(function () {
     // resolve to their own handlers rather than being read as a post slug.
     Route::get('/@{author}/about', [PublicBlogController::class, 'about'])->name('blog.about');
     Route::get('/@{author}/links', [PublicBlogController::class, 'links'])->name('blog.links');
+    Route::get('/@{author}/archive', [PublicBlogController::class, 'archive'])->name('blog.archive');
     Route::get('/@{author}/feed', [PublicBlogController::class, 'feed'])->name('blog.feed');
     Route::get('/@{author}/sitemap.xml', [PublicBlogController::class, 'sitemap'])->name('blog.sitemap');
 

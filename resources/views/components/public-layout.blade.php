@@ -70,8 +70,9 @@
             {{-- Persistent underlines: these links match the nav text color,
                  so hover-only underlines left no at-rest cue (and touch users
                  never see hover states). --}}
-            <nav class="mt-3 flex gap-4 text-sm text-gray-600">
+            <nav class="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-600">
                 <a href="{{ route('blog.home', $author) }}" class="underline decoration-theme hover:decoration-current">{{ __('Posts') }}</a>
+                <a href="{{ route('blog.archive', $author) }}" class="underline decoration-theme hover:decoration-current">{{ __('Archive') }}</a>
                 <a href="{{ route('blog.about', $author) }}" class="underline decoration-theme hover:decoration-current">{{ __('About') }}</a>
                 <a href="{{ route('blog.links', $author) }}" class="underline decoration-theme hover:decoration-current">{{ __('Links') }}</a>
                 <a href="{{ route('blog.feed', $author) }}" class="underline decoration-theme hover:decoration-current">{{ __('Feed') }}</a>

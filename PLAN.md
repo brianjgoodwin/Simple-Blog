@@ -612,10 +612,18 @@ live before this exists. Numbered 14 by creation order, sequenced before 11.
 ### Smaller sketches (designed 2026-07-11, not scheduled)
 Each is self-contained and roughly a session or less; none blocks anything.
 
-- **Archive page** — `/@{username}/archive`: every published title,
-  chronological, grouped by year. The river shows recent writing; the
-  archive makes a blog feel like a body of work. One query, one template.
-  Link from blog nav. Same drafts-never-appear test as home.
+- **Archive page (BUILT 2026-07-17)** — `/@{username}/archive`: every
+  published title, newest first, grouped by year (one query + `groupBy` on the
+  year, one template). Reserved word before the `{slug}` route; `published()`
+  scope + `abortIfSuspended`, so drafts never appear. Linked from the blog nav,
+  which is now `flex-wrap` (Posts / Archive / About / Links / Feed — five items
+  wrap gracefully on narrow screens rather than being thinned out). Six tests.
+- **Privacy page (BUILT 2026-07-17)** — host-level static `/privacy`, a sibling
+  of `/acceptable-use` (self-contained, not `x-public-layout`). A short, honest
+  policy: what we store (account fields, the Markdown, brief server logs), what
+  readers get (public pages load nothing but page + stylesheet — the CSP proves
+  it), and export/delete as the exit. Linked from the site-footer, so it's
+  reachable from every blog and the landing page. Two tests.
 - **Post scheduling** — `status`+`published_at` already model it: publish
   with a future timestamp, public scopes become `published_at <= now()`,
   slug freezes at the moment of *scheduling* (it's leaving the author's
@@ -624,13 +632,62 @@ Each is self-contained and roughly a session or less; none blocks anything.
   rules and the composer UI need a third mental state, and the feed's
   Last-Modified math must use `max(published_at where <= now())`. Cheap
   mechanically, subtle at the edges — sketch says: don't rush it.
-- **Per-blog search** — SQLite ships FTS5, so full-text search costs no new
-  infrastructure — one of the rare stacks where this is true. External
-  content table synced from posts (or contentless FTS over body), search
-  box on the blog home, published-only (the guarantee again). Middling
-  priority; high fun-per-line. Interacts with the body_html decision only
-  in that FTS wants the SOURCE Markdown, another vote for keeping `body`
-  canonical.
+
+  **Complications found reviewing this against built code (2026-07-17) — not
+  yet built, read before starting:**
+  - **`scopePublished` is status-only today** (`Post::scopePublished` =
+    `where('status', Published)`, no time gate). Adding `->where('published_at',
+    '<=', now())` there fixes every public surface at once (home, post, feed,
+    sitemap, archive) — but the *same* scope backs the dashboard's "Published"
+    list (`PostController::index`), which would then silently hide scheduled
+    posts. That's the "third state": the dashboard needs a **Scheduled** bucket
+    (status Published, `published_at` in the future) distinct from live
+    Published. Decide whether a scheduled post's public URL 404s until live
+    (consistent with drafts) — it should.
+  - **⚠️ It breaks the feed's conditional GET as built.** Phase 12 set
+    `Last-Modified = max(updated_at)` of published posts, correct only while
+    "published" == "live" (a write is the only way a post enters the feed).
+    Once posts go live by the clock, a scheduled post crossing `now()` is a
+    content change **no write triggers**, and its `updated_at` is old — so
+    `max(updated_at)` won't advance and readers holding a 304 never see it.
+    Fix: compute the feed timestamp as `max(greatest(published_at, updated_at))`
+    over live posts (published_at catches going-live; updated_at catches edits).
+    Land this fix in the same change, with a test that a post going live
+    advances Last-Modified.
+  - **What already works:** slug freezing is `isPublished()` (status-based), so
+    it freezes at schedule time as wanted; `publish()` just needs a path that
+    accepts + validates a future `published_at` instead of `?? now()`.
+  - **Autosave nuance:** autosave is disabled for `isPublished()` posts
+    (`_fields.blade.php`); a scheduled-but-not-live post inherits that. Maybe
+    fine, maybe you want autosave until it actually goes live — a UX call.
+  - **Verdict:** do this LAST of the smaller sketches and deliberately — it's
+    the only one that reaches back into the feed's caching logic.
+- **Per-blog search** — search box on the blog home, published-only (the
+  guarantee again). Wants the SOURCE Markdown (`body`), not `body_html` —
+  another vote for keeping `body` canonical, which we did. The natural sync
+  point is the `Post::booted()` saving hook already added for `body_html` (the
+  single write path).
+
+  **Correction (2026-07-17): the original SQLite-FTS5 plan does NOT work — prod
+  is MySQL** (confirmed with Brian), and FTS5 is SQLite-only. Options for the
+  actual SQLite-dev / MySQL-prod split, cheapest first:
+  - **`LIKE` scope (RECOMMENDED for now).** `where('title','like',"%$q%")
+    ->orWhere('body','like',"%$q%")` on the `published()` scope. Portable —
+    *identical* behavior in SQLite dev and MySQL prod — no migration, no index,
+    no virtual table, and it tests anywhere. No ranking or stemming, and it's a
+    full scan, but at single-author-blog scale that's a non-issue. Highest
+    reward-per-effort here; ~½ session, mostly the results template.
+  - **MySQL native `FULLTEXT` + `MATCH…AGAINST`.** Real relevance ranking and
+    word-aware matching; a `FULLTEXT(title, body)` index is one migration. But
+    SQLite (dev + the test DB) has no `MATCH…AGAINST`, so the query must be
+    driver-gated (FULLTEXT on MySQL, `LIKE` fallback on SQLite) — meaning the
+    thing you test in dev isn't the thing that runs in prod. More power, real
+    divergence cost. Worth it only once post counts make `LIKE` feel slow.
+  - **Scout + a search engine** (Meilisearch/Typesense) — overkill and against
+    the "state lives in the DB, plainly" ethos; not lower-effort. Skip.
+  - **Recommendation:** ship `LIKE` behind a `scopeSearch($q)` on Post; if it
+    ever outgrows that, swap the scope body for driver-gated FULLTEXT without
+    touching callers.
 - **Blog description + light SEO (sketched 2026-07-12)** — one nullable,
   author-editable `description` column on users (~160-char guidance in the
   settings form) feeding `<meta name="description">` and `og:description`

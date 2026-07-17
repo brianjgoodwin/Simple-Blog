@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Post;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -100,6 +101,30 @@ class PublicBlogController extends Controller
                 'updated' => $lastModified ? Carbon::parse($lastModified) : $author->created_at,
             ])->render())
             ->header('Content-Type', 'application/atom+xml; charset=UTF-8');
+    }
+
+    /**
+     * The archive: every published post's title, newest first, grouped by year.
+     *
+     * The river (home) is about recent writing; the archive is the whole body
+     * of work at a glance. Titles and dates only — cheap enough to skip
+     * pagination. Same published() scope and suspended guard as everywhere
+     * public, so drafts never appear.
+     */
+    public function archive(User $author): View
+    {
+        $this->abortIfSuspended($author);
+
+        $postsByYear = $author->posts()
+            ->published()
+            ->latest('published_at')
+            ->get(['title', 'slug', 'published_at'])
+            ->groupBy(fn (Post $post) => $post->published_at->year);
+
+        return view('public.archive', [
+            'author' => $author,
+            'postsByYear' => $postsByYear,
+        ]);
     }
 
     /**
