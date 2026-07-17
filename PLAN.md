@@ -259,6 +259,45 @@ Verify: full Pest suite + manual keyboard pass (tab through nav, dropdown,
 composer, pagination) + live check after deploy (`npm run build`,
 `view:clear`; no new routes so no `route:cache` concern).
 
+#### Phase 9 follow-up — second audit pass (2026-07-17)
+A re-audit found the Phase 9 base holding up well; three refinements landed
+this session (one commit), plus two items deliberately deferred below.
+
+Done:
+1. **Modal dialog semantics.** `components/modal.blade.php` had a working
+   focus trap but no dialog role. Added `role="dialog"`, `aria-modal="true"`,
+   and an optional `aria-labelledby` prop; the delete-account modal labels
+   itself via its heading id. Also restore focus to the triggering element on
+   close (it was falling to `<body>`).
+2. **Skip link.** `layouts/app.blade.php` gains a visible-on-focus "Skip to
+   content" link past the repeated dashboard nav (WCAG 2.4.1); `<main>` gets
+   `id="main" tabindex="-1"` as the target. Public reader layout skipped — its
+   header is a three-link band, not worth a skip target.
+3. **Form errors associated with fields.** `x-text-input` auto-wires
+   `aria-invalid` + `aria-describedby` from the default error bag;
+   `x-input-error` emits a stable `id="{field}-error"`. Named-bag inputs
+   (updatePassword, userDeletion) and the raw Markdown textareas set these
+   explicitly; radio-group errors attach to their `<fieldset>`. A screen
+   reader now announces the validation message on field focus, not just
+   visually below it. Verify: full Pest suite (133 pass).
+
+Deferred (low impact, noted so future-us doesn't forget):
+- **Dropdown menu semantics** (`components/dropdown.blade.php`). The trigger
+  is correct (`aria-haspopup`, `:aria-expanded`), but the open panel is a
+  plain `<div>` of links — no `role="menu"`/`menuitem`, focus doesn't move
+  into it on open or return to the trigger on close, no arrow-key
+  navigation. Soft finding: the items are ordinary links, so it degrades to
+  "a list of links" rather than being broken. Only worth doing if we adopt
+  the full menu-button pattern (roles + roving tabindex + arrow keys)
+  wholesale — a half-implementation would be worse than the current honest
+  links.
+- **`prefers-reduced-motion` fallback.** Modal and dropdown use Alpine
+  `x-transition` scale/opacity animations with no reduced-motion escape
+  hatch (WCAG 2.3.3, AAA). Cheap fix — a small `@media (prefers-reduced-
+  motion: reduce)` block in `app.css` neutralizing transition/animation
+  duration — but AAA and the transitions are brief, so it sits below the AA
+  line we hold ourselves to.
+
 ### Phase 10 — Blog appearance settings (DONE — built & deployed 2026-07-12)
 Built as sketched (commit c9f6072): four themes (default / sage / dusk /
 dawn) + serif/sans toggle, settings form at /dashboard/appearance, enum
