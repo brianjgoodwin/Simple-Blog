@@ -18,6 +18,9 @@ enum Theme: string
     case Sage = 'sage';
     case Dusk = 'dusk';
     case Dawn = 'dawn';
+    case Honey = 'honey';
+    case Ember = 'ember';
+    case Iris = 'iris';
 
     public function label(): string
     {
@@ -26,6 +29,9 @@ enum Theme: string
             self::Sage => __('Sage'),
             self::Dusk => __('Dusk'),
             self::Dawn => __('Dawn'),
+            self::Honey => __('Honey'),
+            self::Ember => __('Ember'),
+            self::Iris => __('Iris'),
         };
     }
 
@@ -46,6 +52,9 @@ enum Theme: string
             self::Sage => ['bg' => '#f3f6f3', 'accent' => '#166534'],
             self::Dusk => ['bg' => '#f3f5f9', 'accent' => '#1e40af'],
             self::Dawn => ['bg' => '#faf5eb', 'accent' => '#9a3412'],
+            self::Honey => ['bg' => '#faf8ec', 'accent' => '#854d0e'],
+            self::Ember => ['bg' => '#fcf3ec', 'accent' => '#b23c0e'],
+            self::Iris => ['bg' => '#f6f3fb', 'accent' => '#6b21a8'],
         };
     }
 
@@ -56,6 +65,9 @@ enum Theme: string
             self::Sage => __('A soft green tint with deep green links.'),
             self::Dusk => __('A cool blue-gray tint with deep blue links.'),
             self::Dawn => __('A warm cream tint with rust links.'),
+            self::Honey => __('A soft yellow tint with deep gold links.'),
+            self::Ember => __('A warm peach tint with burnt-orange links.'),
+            self::Iris => __('A pale lavender tint with deep violet links.'),
         };
     }
 }

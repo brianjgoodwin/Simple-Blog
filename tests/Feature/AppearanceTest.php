@@ -82,3 +82,30 @@ test('a fresh author gets the default look', function () {
         ->assertSee('data-theme="default"', false)
         ->assertSee('font-sans');
 });
+
+test('the appearance form offers every theme', function () {
+    $this->actingAs(appearanceAuthor())
+        ->get('/dashboard/appearance')
+        ->assertOk()
+        ->assertSee('Honey')
+        ->assertSee('Ember')
+        ->assertSee('Iris');
+});
+
+test('an author can choose one of the new themes', function () {
+    $author = appearanceAuthor();
+
+    $this->actingAs($author)
+        ->put('/dashboard/appearance', ['theme' => 'ember', 'font' => 'sans'])
+        ->assertRedirect(route('appearance.edit'));
+
+    expect($author->refresh()->theme)->toBe(Theme::Ember);
+});
+
+test('a new theme renders on the public blog', function () {
+    $author = appearanceAuthor();
+    $author->theme = Theme::Iris; // deliberate: not fillable
+    $author->save();
+
+    $this->get('/@quinn')->assertOk()->assertSee('data-theme="iris"', false);
+});

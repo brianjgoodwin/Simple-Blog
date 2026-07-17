@@ -309,6 +309,15 @@ CSS block in app.css + matching Theme::swatch() hexes + the four-ratio
 contrast check (body gray-900, nav gray-600, muted, accent — all vs the
 theme background). Original sketch below, kept for the reasoning.
 
+**Three more themes (2026-07-17): Honey / Ember / Iris** — subtle yellow,
+orange, and purple tints, seven themes total. Accents are AA-verified on their
+tinted backgrounds (Honey #854d0e 6.43:1, Ember #b23c0e 5.41:1, Iris #6b21a8
+7.94:1), muted reuses #5d6673. The "verify before shipping" rule is now
+automated: `tests/Unit/ThemeContrastTest.php` parses every `[data-theme]` block
+straight from app.css, does the ratio math, and also asserts each `Theme`
+case's `swatch()` stays in sync with its CSS block — so a future theme (or an
+accidental edit) that fails contrast or drifts out of sync fails CI.
+
 Light per-author customization of the public blog. Deliberately small: a
 serif/sans toggle plus a handful of bundled, pre-verified themes. Roughly a
 one-session build; most of the work is choosing colors and verifying contrast.
