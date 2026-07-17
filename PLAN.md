@@ -725,6 +725,38 @@ Each is self-contained and roughly a session or less; none blocks anything.
   with `trustHosts`, per-domain canonical URLs in feeds/OG tags. Filed as
   someday; this is where the project's philosophy ultimately points.
 
+### Public-page performance pass (DONE 2026-07-17)
+Indexes were already right (users.username unique, pages (user_id, slug)
+unique, posts (user_id, status, published_at) composite — every public query
+covered). Two changes landed:
+- **Narrow selects** on the river, feed, and search: since `body_html`, the
+  Markdown source `body` was dead weight on every public read (each row was
+  carrying both columns — roughly double the payload for a 10-post page).
+  Archive and sitemap already selected narrow.
+- **Conditional GET on the post permalink**, same pattern as the feed:
+  Laravel's default `Cache-Control: no-cache, private` makes browsers
+  revalidate every visit, so a Last-Modified + 304 lets repeat readers reuse
+  their cached copy. `Last-Modified = max(post.updated_at, author.updated_at)`
+  — the author term catches name/description/theme changes that alter the page
+  shell. Safe on the permalink ONLY because unpublish/delete 404s the next
+  request before the 304 check.
+
+Flagged, deliberately NOT done — don't add these innocently later:
+- **No conditional GET on the home river**: unpublishing bumps the post's
+  `updated_at` but drops it from the published set, so `max(updated_at)` of
+  published posts doesn't advance — a 304 would keep serving a cached river
+  that still shows the unpublished post. (The FEED shares this staleness
+  wrinkle as shipped; tolerable there because a 304 only tells a reader "keep
+  your copy" — they already have the content — and any later change
+  re-freshens. A future fix would need a per-author content timestamp.)
+- **Sessions still start on public routes**: the web middleware group opens a
+  session and sets a cookie on every reader request, which also forces
+  responses uncacheable by shared proxies. Splitting public routes off the
+  session stack is a real win but touches the auth/CSRF posture (and the
+  landing page's @auth check) — its own deliberate change, not a rider.
+- **`Cache-Control: public, max-age=N`** on public pages would serve stale
+  content after edits for up to N; revalidation (the 304 path) fits better.
+
 ### DECIDED — Markdown render caching: Option A (chosen by Brian 2026-07-11; BUILT 2026-07-17)
 Built as decided: nullable `body_html` on posts, filled from
 `App\Support\Markdown` in Post's single render path (a `saving` hook that
