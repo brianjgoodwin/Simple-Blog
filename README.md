@@ -43,6 +43,22 @@ Host development
 
 Then `ssh development` and browse to <http://localhost:8080>.
 
+## Refreshing after a `git pull`
+
+PHP changes are live immediately — `artisan serve` re-reads the files on every
+request, so no restart is needed. Only three things can go stale:
+
+```bash
+composer install        # only if composer.lock changed
+php artisan migrate     # only if new migrations came in
+npm run build           # only if anything in resources/ changed
+```
+
+Compiled CSS/JS lives in `public/build/`, which is not committed — front-end
+changes won't show up until you rebuild. When in doubt, run all three; steps
+with nothing to do finish in a second or two. If the app still looks stale,
+`php artisan optimize:clear` wipes the config, route, and view caches.
+
 ## Creating an author account
 
 Registration is disabled by design (invite-only). Create accounts from the CLI:
