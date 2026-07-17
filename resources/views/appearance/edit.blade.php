@@ -20,7 +20,17 @@
                     @csrf
                     @method('PUT')
 
-                    <fieldset>
+                    <div>
+                        <x-input-label for="description" :value="__('Description')" />
+                        <x-text-input id="description" name="description" type="text" maxlength="200"
+                                      class="mt-1 block w-full" :value="old('description', $user->description)" />
+                        <p class="mt-1 text-sm text-gray-500">
+                            {{ __('A short tagline, shown under your blog name and as your feed subtitle. Optional.') }}
+                        </p>
+                        <x-input-error field="description" :messages="$errors->get('description')" class="mt-2" />
+                    </div>
+
+                    <fieldset @error('theme') aria-describedby="theme-error" @enderror>
                         <legend class="text-lg font-medium">{{ __('Theme') }}</legend>
                         <p class="mt-1 text-sm text-gray-500">
                             {{ __('The colors of your public blog. Every theme meets WCAG AA contrast — pick by taste.') }}
@@ -46,10 +56,10 @@
                                 </label>
                             @endforeach
                         </div>
-                        <x-input-error :messages="$errors->get('theme')" class="mt-2" />
+                        <x-input-error field="theme" :messages="$errors->get('theme')" class="mt-2" />
                     </fieldset>
 
-                    <fieldset>
+                    <fieldset @error('font') aria-describedby="font-error" @enderror>
                         <legend class="text-lg font-medium">{{ __('Font') }}</legend>
                         <p class="mt-1 text-sm text-gray-500">
                             {{ __('System fonts only — your readers never download a webfont, from us or anyone else.') }}
@@ -67,7 +77,7 @@
                                 </label>
                             @endforeach
                         </div>
-                        <x-input-error :messages="$errors->get('font')" class="mt-2" />
+                        <x-input-error field="font" :messages="$errors->get('font')" class="mt-2" />
                     </fieldset>
 
                     <div class="flex items-center gap-4">

@@ -59,6 +59,30 @@
     --theme-border: #ecdcc0;
 }
 
+[data-theme="honey"] {
+    --theme-bg: #faf8ec;
+    --theme-accent: #854d0e;    /* 6.43:1 on bg */
+    --theme-muted: #5d6673;     /* 5.45:1 on bg */
+    --theme-underline: #e3d9a4;
+    --theme-border: #ece3c6;
+}
+
+[data-theme="ember"] {
+    --theme-bg: #fcf3ec;
+    --theme-accent: #b23c0e;    /* 5.41:1 on bg */
+    --theme-muted: #5d6673;     /* 5.31:1 on bg */
+    --theme-underline: #eac6ad;
+    --theme-border: #f3dccb;
+}
+
+[data-theme="iris"] {
+    --theme-bg: #f6f3fb;
+    --theme-accent: #6b21a8;    /* 7.94:1 on bg */
+    --theme-muted: #5d6673;     /* 5.29:1 on bg */
+    --theme-underline: #d6c6ec;
+    --theme-border: #e4daf2;
+}
+
 @layer components {
     /* Links inside post/page bodies take the theme accent. The typography
        plugin reads this variable; default #111827 matches its gray theme,

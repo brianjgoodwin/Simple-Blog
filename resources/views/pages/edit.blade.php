@@ -23,9 +23,10 @@
                     <div>
                         <x-input-label for="body" :value="__('Content (Markdown)')" />
                         <textarea id="body" name="body" rows="18"
+                                  @error('body') aria-invalid="true" aria-describedby="body-error" @enderror
                                   class="mt-1 block w-full border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-md shadow-sm font-mono text-sm"
                         >{{ old('body', $page->body) }}</textarea>
-                        <x-input-error :messages="$errors->get('body')" class="mt-2" />
+                        <x-input-error field="body" :messages="$errors->get('body')" class="mt-2" />
                         <p class="mt-1 text-sm text-gray-500">
                             {{ __('Markdown is supported. Raw HTML is not rendered.') }}
                         </p>

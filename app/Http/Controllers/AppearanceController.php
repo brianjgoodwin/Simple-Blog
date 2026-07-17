@@ -30,13 +30,18 @@ class AppearanceController extends Controller
         $validated = $request->validate([
             'theme' => ['required', Rule::enum(Theme::class)],
             'font' => ['required', Rule::enum(BlogFont::class)],
+            'description' => ['nullable', 'string', 'max:200'],
         ]);
 
-        // Explicit assignment, not update(): theme and font are
+        // Explicit assignment, not update(): theme, font, and description are
         // deliberately outside User's fillable list.
         $user = $request->user();
         $user->theme = $validated['theme'];
         $user->font = $validated['font'];
+        // Store a blank description as null so downstream ("has a tagline?")
+        // checks are a simple null test — no empty-string special case.
+        $description = trim((string) ($validated['description'] ?? ''));
+        $user->description = $description === '' ? null : $description;
         $user->save();
 
         return redirect()

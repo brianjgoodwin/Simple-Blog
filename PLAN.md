@@ -259,6 +259,45 @@ Verify: full Pest suite + manual keyboard pass (tab through nav, dropdown,
 composer, pagination) + live check after deploy (`npm run build`,
 `view:clear`; no new routes so no `route:cache` concern).
 
+#### Phase 9 follow-up — second audit pass (2026-07-17)
+A re-audit found the Phase 9 base holding up well; three refinements landed
+this session (one commit), plus two items deliberately deferred below.
+
+Done:
+1. **Modal dialog semantics.** `components/modal.blade.php` had a working
+   focus trap but no dialog role. Added `role="dialog"`, `aria-modal="true"`,
+   and an optional `aria-labelledby` prop; the delete-account modal labels
+   itself via its heading id. Also restore focus to the triggering element on
+   close (it was falling to `<body>`).
+2. **Skip link.** `layouts/app.blade.php` gains a visible-on-focus "Skip to
+   content" link past the repeated dashboard nav (WCAG 2.4.1); `<main>` gets
+   `id="main" tabindex="-1"` as the target. Public reader layout skipped — its
+   header is a three-link band, not worth a skip target.
+3. **Form errors associated with fields.** `x-text-input` auto-wires
+   `aria-invalid` + `aria-describedby` from the default error bag;
+   `x-input-error` emits a stable `id="{field}-error"`. Named-bag inputs
+   (updatePassword, userDeletion) and the raw Markdown textareas set these
+   explicitly; radio-group errors attach to their `<fieldset>`. A screen
+   reader now announces the validation message on field focus, not just
+   visually below it. Verify: full Pest suite (133 pass).
+
+Deferred (low impact, noted so future-us doesn't forget):
+- **Dropdown menu semantics** (`components/dropdown.blade.php`). The trigger
+  is correct (`aria-haspopup`, `:aria-expanded`), but the open panel is a
+  plain `<div>` of links — no `role="menu"`/`menuitem`, focus doesn't move
+  into it on open or return to the trigger on close, no arrow-key
+  navigation. Soft finding: the items are ordinary links, so it degrades to
+  "a list of links" rather than being broken. Only worth doing if we adopt
+  the full menu-button pattern (roles + roving tabindex + arrow keys)
+  wholesale — a half-implementation would be worse than the current honest
+  links.
+- **`prefers-reduced-motion` fallback.** Modal and dropdown use Alpine
+  `x-transition` scale/opacity animations with no reduced-motion escape
+  hatch (WCAG 2.3.3, AAA). Cheap fix — a small `@media (prefers-reduced-
+  motion: reduce)` block in `app.css` neutralizing transition/animation
+  duration — but AAA and the transitions are brief, so it sits below the AA
+  line we hold ourselves to.
+
 ### Phase 10 — Blog appearance settings (DONE — built & deployed 2026-07-12)
 Built as sketched (commit c9f6072): four themes (default / sage / dusk /
 dawn) + serif/sans toggle, settings form at /dashboard/appearance, enum
@@ -269,6 +308,15 @@ to #5d6673 via a --theme-muted variable. Adding a theme later: enum case +
 CSS block in app.css + matching Theme::swatch() hexes + the four-ratio
 contrast check (body gray-900, nav gray-600, muted, accent — all vs the
 theme background). Original sketch below, kept for the reasoning.
+
+**Three more themes (2026-07-17): Honey / Ember / Iris** — subtle yellow,
+orange, and purple tints, seven themes total. Accents are AA-verified on their
+tinted backgrounds (Honey #854d0e 6.43:1, Ember #b23c0e 5.41:1, Iris #6b21a8
+7.94:1), muted reuses #5d6673. The "verify before shipping" rule is now
+automated: `tests/Unit/ThemeContrastTest.php` parses every `[data-theme]` block
+straight from app.css, does the ratio math, and also asserts each `Theme`
+case's `swatch()` stays in sync with its CSS block — so a future theme (or an
+accidental edit) that fails contrast or drifts out of sync fails CI.
 
 Light per-author customization of the public blog. Deliberately small: a
 serif/sans toggle plus a handful of bundled, pre-verified themes. Roughly a
@@ -387,7 +435,37 @@ have. Brian's call — he knows the testers.
 concurrent submits; registered account matches an artisan-created one;
 throttling kicks in.
 
-### Phase 12 — Atom feed + follow features (SKETCH — designed 2026-07-10, not scheduled)
+### Phase 12 — Atom feed + follow features (BUILT 2026-07-17)
+Built on the body_html cache (Option A, built the same day). Shipped in three
+commits: the feed, Open Graph meta, and the sitemap.
+
+- **Feed** at `/@{username}/feed` — published only, newest first, capped at 20;
+  hand-rolled Atom (`feed/atom.blade.php`); entry `<id>`s are permalinks;
+  `<content type="html">` carries the cached `body_html`, entity-encoded;
+  `abortIfSuspended` first. No firehose feed.
+- **Conditional GET** — `Last-Modified` = `max(updated_at)` of published posts
+  via one aggregate query; `If-Modified-Since` answered with a bare 304 before
+  any body is loaded.
+- **Discovery** — autodiscovery `<link>` in the public head + a visible Feed
+  nav link. **Microformats** (h-feed/h-entry/p-name/u-url/dt-published/
+  e-content, h-card on the author) in the same commit.
+- **Open Graph + description** — og:* + twitter:card on all public pages;
+  article tags + a `Post::excerpt()` description on post pages.
+- **sitemap.xml** at `/@{username}/sitemap.xml` — home, About, Links, published
+  posts; same published() scope and suspended guard.
+- **Blog description** — a nullable `description` column (max 200, not
+  fillable, blank stored as null), edited on the Appearance page. Shown under
+  the blog name on the home page, carried as the Atom `<subtitle>`, and used as
+  the home page's meta/OG description. Plain text, escaped on output (verified
+  with a `<`/`&`/quote value); this is what the sketch's `<subtitle>` needed.
+
+Open questions resolved: (1) `<updated>` uses honest `updated_at` — edits may
+re-surface a post, accepted as truthful; (2) OG rode along here. The
+blog-description field (originally deferred for lack of a column) followed
+immediately, so nothing from the sketch is outstanding. 21 tests across
+FeedTest/OpenGraphTest/SitemapTest/BlogDescriptionTest; both XML documents
+verified well-formed with a parser. Original sketch follows.
+
 Promotes RSS out of the deferred list. One feed per blog; a "follow" story
 without accounts, email, or federation. One session as scoped, with the
 Markdown caching decision as flagged prerequisite-or-companion.
@@ -543,10 +621,18 @@ live before this exists. Numbered 14 by creation order, sequenced before 11.
 ### Smaller sketches (designed 2026-07-11, not scheduled)
 Each is self-contained and roughly a session or less; none blocks anything.
 
-- **Archive page** — `/@{username}/archive`: every published title,
-  chronological, grouped by year. The river shows recent writing; the
-  archive makes a blog feel like a body of work. One query, one template.
-  Link from blog nav. Same drafts-never-appear test as home.
+- **Archive page (BUILT 2026-07-17)** — `/@{username}/archive`: every
+  published title, newest first, grouped by year (one query + `groupBy` on the
+  year, one template). Reserved word before the `{slug}` route; `published()`
+  scope + `abortIfSuspended`, so drafts never appear. Linked from the blog nav,
+  which is now `flex-wrap` (Posts / Archive / About / Links / Feed — five items
+  wrap gracefully on narrow screens rather than being thinned out). Six tests.
+- **Privacy page (BUILT 2026-07-17)** — host-level static `/privacy`, a sibling
+  of `/acceptable-use` (self-contained, not `x-public-layout`). A short, honest
+  policy: what we store (account fields, the Markdown, brief server logs), what
+  readers get (public pages load nothing but page + stylesheet — the CSP proves
+  it), and export/delete as the exit. Linked from the site-footer, so it's
+  reachable from every blog and the landing page. Two tests.
 - **Post scheduling** — `status`+`published_at` already model it: publish
   with a future timestamp, public scopes become `published_at <= now()`,
   slug freezes at the moment of *scheduling* (it's leaving the author's
@@ -555,13 +641,68 @@ Each is self-contained and roughly a session or less; none blocks anything.
   rules and the composer UI need a third mental state, and the feed's
   Last-Modified math must use `max(published_at where <= now())`. Cheap
   mechanically, subtle at the edges — sketch says: don't rush it.
-- **Per-blog search** — SQLite ships FTS5, so full-text search costs no new
-  infrastructure — one of the rare stacks where this is true. External
-  content table synced from posts (or contentless FTS over body), search
-  box on the blog home, published-only (the guarantee again). Middling
-  priority; high fun-per-line. Interacts with the body_html decision only
-  in that FTS wants the SOURCE Markdown, another vote for keeping `body`
-  canonical.
+
+  **Complications found reviewing this against built code (2026-07-17) — not
+  yet built, read before starting:**
+  - **`scopePublished` is status-only today** (`Post::scopePublished` =
+    `where('status', Published)`, no time gate). Adding `->where('published_at',
+    '<=', now())` there fixes every public surface at once (home, post, feed,
+    sitemap, archive) — but the *same* scope backs the dashboard's "Published"
+    list (`PostController::index`), which would then silently hide scheduled
+    posts. That's the "third state": the dashboard needs a **Scheduled** bucket
+    (status Published, `published_at` in the future) distinct from live
+    Published. Decide whether a scheduled post's public URL 404s until live
+    (consistent with drafts) — it should.
+  - **⚠️ It breaks the feed's conditional GET as built.** Phase 12 set
+    `Last-Modified = max(updated_at)` of published posts, correct only while
+    "published" == "live" (a write is the only way a post enters the feed).
+    Once posts go live by the clock, a scheduled post crossing `now()` is a
+    content change **no write triggers**, and its `updated_at` is old — so
+    `max(updated_at)` won't advance and readers holding a 304 never see it.
+    Fix: compute the feed timestamp as `max(greatest(published_at, updated_at))`
+    over live posts (published_at catches going-live; updated_at catches edits).
+    Land this fix in the same change, with a test that a post going live
+    advances Last-Modified.
+  - **What already works:** slug freezing is `isPublished()` (status-based), so
+    it freezes at schedule time as wanted; `publish()` just needs a path that
+    accepts + validates a future `published_at` instead of `?? now()`.
+  - **Autosave nuance:** autosave is disabled for `isPublished()` posts
+    (`_fields.blade.php`); a scheduled-but-not-live post inherits that. Maybe
+    fine, maybe you want autosave until it actually goes live — a UX call.
+  - **Verdict:** do this LAST of the smaller sketches and deliberately — it's
+    the only one that reaches back into the feed's caching logic.
+- **Per-blog search (BUILT 2026-07-17)** — search box on the blog home,
+  published-only (the guarantee again). Wants the SOURCE Markdown (`body`), not
+  `body_html` — another vote for keeping `body` canonical, which we did.
+
+  Built the LIKE option below: a `Post::scopeSearch($term)` (title OR body,
+  wildcards escaped with `=` for SQLite/MySQL portability) composed with
+  `published()`; a reused search-box partial on the blog home; a
+  `/@{username}/search?q=` results page (paginated, blank query shows a prompt,
+  no matches reports it); `abortIfSuspended` first. 11 tests, including the
+  drafts-never-leak guarantee and literal `%`/`_` handling. The FULLTEXT swap
+  stays a drop-in: replace the scope body, callers untouched.
+
+  **Correction (2026-07-17): the original SQLite-FTS5 plan does NOT work — prod
+  is MySQL** (confirmed with Brian), and FTS5 is SQLite-only. Options for the
+  actual SQLite-dev / MySQL-prod split, cheapest first:
+  - **`LIKE` scope (RECOMMENDED for now).** `where('title','like',"%$q%")
+    ->orWhere('body','like',"%$q%")` on the `published()` scope. Portable —
+    *identical* behavior in SQLite dev and MySQL prod — no migration, no index,
+    no virtual table, and it tests anywhere. No ranking or stemming, and it's a
+    full scan, but at single-author-blog scale that's a non-issue. Highest
+    reward-per-effort here; ~½ session, mostly the results template.
+  - **MySQL native `FULLTEXT` + `MATCH…AGAINST`.** Real relevance ranking and
+    word-aware matching; a `FULLTEXT(title, body)` index is one migration. But
+    SQLite (dev + the test DB) has no `MATCH…AGAINST`, so the query must be
+    driver-gated (FULLTEXT on MySQL, `LIKE` fallback on SQLite) — meaning the
+    thing you test in dev isn't the thing that runs in prod. More power, real
+    divergence cost. Worth it only once post counts make `LIKE` feel slow.
+  - **Scout + a search engine** (Meilisearch/Typesense) — overkill and against
+    the "state lives in the DB, plainly" ethos; not lower-effort. Skip.
+  - **Recommendation:** ship `LIKE` behind a `scopeSearch($q)` on Post; if it
+    ever outgrows that, swap the scope body for driver-gated FULLTEXT without
+    touching callers.
 - **Blog description + light SEO (sketched 2026-07-12)** — one nullable,
   author-editable `description` column on users (~160-char guidance in the
   settings form) feeding `<meta name="description">` and `og:description`
@@ -584,11 +725,20 @@ Each is self-contained and roughly a session or less; none blocks anything.
   with `trustHosts`, per-domain canonical URLs in feeds/OG tags. Filed as
   someday; this is where the project's philosophy ultimately points.
 
-### DECIDED — Markdown render caching: Option A (chosen by Brian 2026-07-11)
-Decision made; not yet built. Implementation (~half a session: migration +
-single-write-path render + `posts:rerender` + tests) lands immediately
-before Phase 12 feeds, per the pickup order below. Options preserved for
-the record:
+### DECIDED — Markdown render caching: Option A (chosen by Brian 2026-07-11; BUILT 2026-07-17)
+Built as decided: nullable `body_html` on posts, filled from
+`App\Support\Markdown` in Post's single render path (a `saving` hook that
+re-renders whenever `body` is dirty — so the controller store/update, the
+composer autosave, the factory, and tinker all populate it, and it can't
+drift). A `bodyHtml` accessor returns an `HtmlString` so the public views
+echo `$post->body_html` with `{{ }}` — the safety lives in the render path,
+not the view. `php artisan posts:rerender` rebuilds every row after a
+pipeline change, using `withoutTimestamps` so a mechanical re-render never
+bumps `updated_at` (which the Phase 12 feed's `<updated>` will read). Six
+tests cover cache-on-save, update, XSS stripping, body-untouched saves, and
+the command. Pages keep rendering live (only two per blog, not polled). The
+migration backfills existing rows. Next: Phase 12 feed. Options preserved
+for the record:
 Referenced throughout the sketches above; the actual options live here. The
 problem: public pages render Markdown → HTML on every request. The river
 renders 10 full bodies per hit, and Phase 12 feeds will re-render every body

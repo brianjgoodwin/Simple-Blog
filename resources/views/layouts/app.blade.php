@@ -17,6 +17,13 @@
         @vite(['resources/css/app.css', 'resources/js/app.js'])
     </head>
     <body class="font-sans antialiased">
+        {{-- Skip link: keyboard/SR users can jump past the repeated nav bar
+             straight to the page content (WCAG 2.4.1). Hidden until focused. --}}
+        <a href="#main"
+           class="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:top-2 focus:left-2 focus:rounded-md focus:bg-white focus:px-4 focus:py-2 focus:text-gray-900 focus:shadow focus:ring-2 focus:ring-indigo-500">
+            {{ __('Skip to content') }}
+        </a>
+
         <div class="min-h-screen bg-gray-100">
             @include('layouts.navigation')
 
@@ -30,7 +37,7 @@
             @endisset
 
             <!-- Page Content -->
-            <main>
+            <main id="main" tabindex="-1">
                 {{ $slot }}
             </main>
         </div>

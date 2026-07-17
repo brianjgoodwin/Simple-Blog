@@ -2,7 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Post;
 use App\Models\User;
+use Illuminate\Http\Request;
+use Illuminate\Http\Response;
+use Illuminate\Support\Carbon;
 use Illuminate\View\View;
 
 /**
@@ -52,6 +56,123 @@ class PublicBlogController extends Controller
             'author' => $author,
             'post' => $post,
         ]);
+    }
+
+    /**
+     * The blog's Atom feed: published posts only, newest first, capped at 20.
+     *
+     * Conditional GET is the point of the design. Readers poll this forever;
+     * we compute Last-Modified from the newest published-post timestamp with a
+     * single aggregate query (no bodies loaded) and answer If-Modified-Since
+     * with a bare 304 before rendering anything. Only a genuinely-changed feed
+     * pays the cost of loading and serializing 20 posts.
+     *
+     * The Last-Modified value is max(updated_at), matching the feed's honest
+     * <updated>: an edit re-stamps the feed and may re-surface a post, which we
+     * accept as truthful (a locked call — see PLAN.md Phase 12).
+     */
+    public function feed(Request $request, User $author): Response
+    {
+        $this->abortIfSuspended($author);
+
+        $lastModified = $author->posts()->published()->max('updated_at');
+
+        $response = new Response();
+        if ($lastModified !== null) {
+            $response->setLastModified(Carbon::parse($lastModified));
+        }
+
+        if ($response->isNotModified($request)) {
+            return $response; // 304, empty body — nothing further queried
+        }
+
+        $posts = $author->posts()
+            ->published()
+            ->latest('published_at')
+            ->limit(20)
+            ->get();
+
+        return $response
+            ->setContent(view('feed.atom', [
+                'author' => $author,
+                'posts' => $posts,
+                // Atom requires a feed-level <updated>; fall back to the
+                // author's creation time for a blog with nothing published yet.
+                'updated' => $lastModified ? Carbon::parse($lastModified) : $author->created_at,
+            ])->render())
+            ->header('Content-Type', 'application/atom+xml; charset=UTF-8');
+    }
+
+    /**
+     * The archive: every published post's title, newest first, grouped by year.
+     *
+     * The river (home) is about recent writing; the archive is the whole body
+     * of work at a glance. Titles and dates only — cheap enough to skip
+     * pagination. Same published() scope and suspended guard as everywhere
+     * public, so drafts never appear.
+     */
+    public function archive(User $author): View
+    {
+        $this->abortIfSuspended($author);
+
+        $postsByYear = $author->posts()
+            ->published()
+            ->latest('published_at')
+            ->get(['title', 'slug', 'published_at'])
+            ->groupBy(fn (Post $post) => $post->published_at->year);
+
+        return view('public.archive', [
+            'author' => $author,
+            'postsByYear' => $postsByYear,
+        ]);
+    }
+
+    /**
+     * Full-text-ish search across the author's published posts.
+     *
+     * A plain LIKE scope (Post::scopeSearch) composed with published(), so
+     * drafts are never searchable. A blank query renders the prompt rather than
+     * matching everything. abortIfSuspended first, like every public route.
+     */
+    public function search(Request $request, User $author): View
+    {
+        $this->abortIfSuspended($author);
+
+        $term = trim((string) $request->query('q', ''));
+
+        $results = $term === ''
+            ? null
+            : $author->posts()
+                ->published()
+                ->search($term)
+                ->latest('published_at')
+                ->paginate(10)
+                ->withQueryString();
+
+        return view('public.search', [
+            'author' => $author,
+            'term' => $term,
+            'results' => $results,
+        ]);
+    }
+
+    /**
+     * A per-blog sitemap.xml: the home page, About, Links, and every published
+     * post. Same published() scope and suspended-author guard as everything
+     * else public, so it can never list a draft or a suspended blog.
+     */
+    public function sitemap(User $author): Response
+    {
+        $this->abortIfSuspended($author);
+
+        $posts = $author->posts()
+            ->published()
+            ->latest('published_at')
+            ->get(['slug', 'updated_at']);
+
+        return response()
+            ->view('sitemap', ['author' => $author, 'posts' => $posts])
+            ->header('Content-Type', 'application/xml; charset=UTF-8');
     }
 
     /**

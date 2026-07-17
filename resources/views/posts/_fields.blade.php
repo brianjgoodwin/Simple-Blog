@@ -12,7 +12,7 @@
     <x-input-label for="title" :value="__('Title')" />
     <x-text-input id="title" name="title" type="text" class="mt-1 block w-full"
                   :value="old('title', $post?->title)" required autofocus />
-    <x-input-error :messages="$errors->get('title')" class="mt-2" />
+    <x-input-error field="title" :messages="$errors->get('title')" class="mt-2" />
 </div>
 
 <div x-data="composer({
@@ -47,6 +47,7 @@
          Alpine reads the value in init() and mirrors it on input. --}}
     <textarea id="body" name="body" rows="18" x-ref="body"
               x-show="tab === 'write'" @input="body = $event.target.value; onInput()"
+              @error('body') aria-invalid="true" aria-describedby="body-error" @enderror
               class="mt-2 block w-full border-gray-300 focus:border-indigo-500 focus:ring-indigo-500 rounded-md shadow-sm font-mono text-sm leading-relaxed"
     >{{ old('body', $post?->body) }}</textarea>
 
@@ -56,7 +57,7 @@
         <div class="prose" x-html="previewHtml"></div>
     </div>
 
-    <x-input-error :messages="$errors->get('body')" class="mt-2" />
+    <x-input-error field="body" :messages="$errors->get('body')" class="mt-2" />
 
     {{-- Status line: hint + word count + autosave state --}}
     <div class="mt-1 flex items-center justify-between text-sm text-gray-500">
