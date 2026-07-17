@@ -128,6 +128,35 @@ class PublicBlogController extends Controller
     }
 
     /**
+     * Full-text-ish search across the author's published posts.
+     *
+     * A plain LIKE scope (Post::scopeSearch) composed with published(), so
+     * drafts are never searchable. A blank query renders the prompt rather than
+     * matching everything. abortIfSuspended first, like every public route.
+     */
+    public function search(Request $request, User $author): View
+    {
+        $this->abortIfSuspended($author);
+
+        $term = trim((string) $request->query('q', ''));
+
+        $results = $term === ''
+            ? null
+            : $author->posts()
+                ->published()
+                ->search($term)
+                ->latest('published_at')
+                ->paginate(10)
+                ->withQueryString();
+
+        return view('public.search', [
+            'author' => $author,
+            'term' => $term,
+            'results' => $results,
+        ]);
+    }
+
+    /**
      * A per-blog sitemap.xml: the home page, About, Links, and every published
      * post. Same published() scope and suspended-author guard as everything
      * else public, so it can never list a draft or a suspended blog.

@@ -91,6 +91,7 @@ Route::middleware(PublicContentSecurityPolicy::class)->group(function () {
     Route::get('/@{author}/about', [PublicBlogController::class, 'about'])->name('blog.about');
     Route::get('/@{author}/links', [PublicBlogController::class, 'links'])->name('blog.links');
     Route::get('/@{author}/archive', [PublicBlogController::class, 'archive'])->name('blog.archive');
+    Route::get('/@{author}/search', [PublicBlogController::class, 'search'])->name('blog.search');
     Route::get('/@{author}/feed', [PublicBlogController::class, 'feed'])->name('blog.feed');
     Route::get('/@{author}/sitemap.xml', [PublicBlogController::class, 'sitemap'])->name('blog.sitemap');
 

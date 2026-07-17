@@ -125,6 +125,33 @@ class Post extends Model
     }
 
     /**
+     * Scope: posts whose title or body contains the term (case-insensitive
+     * substring match).
+     *
+     * Deliberately LIKE, not a full-text index: it behaves identically on
+     * SQLite (dev) and MySQL (prod), needs no migration, and at single-blog
+     * scale a scan is fine. If it ever outgrows that, swap this body for
+     * driver-gated MySQL FULLTEXT without touching callers. Compose with
+     * published() so only public posts are ever searched.
+     *
+     * @param  Builder<Post>  $query
+     */
+    public function scopeSearch(Builder $query, string $term): void
+    {
+        // Escape the LIKE wildcards so a literal % or _ in the query matches
+        // literally. '=' is the escape char — neither engine treats it
+        // specially inside a string literal (unlike '\'), so `escape '='`
+        // is portable across SQLite and MySQL.
+        $term = str_replace(['=', '%', '_'], ['==', '=%', '=_'], $term);
+        $pattern = '%'.$term.'%';
+
+        $query->where(function (Builder $q) use ($pattern) {
+            $q->whereRaw("title like ? escape '='", [$pattern])
+                ->orWhereRaw("body like ? escape '='", [$pattern]);
+        });
+    }
+
+    /**
      * Is this post publicly visible?
      */
     public function isPublished(): bool

@@ -662,11 +662,17 @@ Each is self-contained and roughly a session or less; none blocks anything.
     fine, maybe you want autosave until it actually goes live — a UX call.
   - **Verdict:** do this LAST of the smaller sketches and deliberately — it's
     the only one that reaches back into the feed's caching logic.
-- **Per-blog search** — search box on the blog home, published-only (the
-  guarantee again). Wants the SOURCE Markdown (`body`), not `body_html` —
-  another vote for keeping `body` canonical, which we did. The natural sync
-  point is the `Post::booted()` saving hook already added for `body_html` (the
-  single write path).
+- **Per-blog search (BUILT 2026-07-17)** — search box on the blog home,
+  published-only (the guarantee again). Wants the SOURCE Markdown (`body`), not
+  `body_html` — another vote for keeping `body` canonical, which we did.
+
+  Built the LIKE option below: a `Post::scopeSearch($term)` (title OR body,
+  wildcards escaped with `=` for SQLite/MySQL portability) composed with
+  `published()`; a reused search-box partial on the blog home; a
+  `/@{username}/search?q=` results page (paginated, blank query shows a prompt,
+  no matches reports it); `abortIfSuspended` first. 11 tests, including the
+  drafts-never-leak guarantee and literal `%`/`_` handling. The FULLTEXT swap
+  stays a drop-in: replace the scope body, callers untouched.
 
   **Correction (2026-07-17): the original SQLite-FTS5 plan does NOT work — prod
   is MySQL** (confirmed with Brian), and FTS5 is SQLite-only. Options for the

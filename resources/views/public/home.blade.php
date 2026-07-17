@@ -1,4 +1,6 @@
 <x-public-layout :author="$author" :homepage="true" :description="$author->description">
+    @include('public.partials.search', ['author' => $author, 'term' => ''])
+
     {{-- h-feed / h-entry: the river is machine-readable to IndieWeb readers and
          archivers using classes on markup we already render. --}}
     <div class="h-feed">
