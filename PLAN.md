@@ -426,7 +426,32 @@ have. Brian's call — he knows the testers.
 concurrent submits; registered account matches an artisan-created one;
 throttling kicks in.
 
-### Phase 12 — Atom feed + follow features (SKETCH — designed 2026-07-10, not scheduled)
+### Phase 12 — Atom feed + follow features (BUILT 2026-07-17)
+Built on the body_html cache (Option A, built the same day). Shipped in three
+commits: the feed, Open Graph meta, and the sitemap.
+
+- **Feed** at `/@{username}/feed` — published only, newest first, capped at 20;
+  hand-rolled Atom (`feed/atom.blade.php`); entry `<id>`s are permalinks;
+  `<content type="html">` carries the cached `body_html`, entity-encoded;
+  `abortIfSuspended` first. No firehose feed.
+- **Conditional GET** — `Last-Modified` = `max(updated_at)` of published posts
+  via one aggregate query; `If-Modified-Since` answered with a bare 304 before
+  any body is loaded.
+- **Discovery** — autodiscovery `<link>` in the public head + a visible Feed
+  nav link. **Microformats** (h-feed/h-entry/p-name/u-url/dt-published/
+  e-content, h-card on the author) in the same commit.
+- **Open Graph + description** — og:* + twitter:card on all public pages;
+  article tags + a `Post::excerpt()` description on post pages.
+- **sitemap.xml** at `/@{username}/sitemap.xml` — home, About, Links, published
+  posts; same published() scope and suspended guard.
+
+Open questions resolved: (1) `<updated>` uses honest `updated_at` — edits may
+re-surface a post, accepted as truthful; (2) OG rode along here. NOT built: a
+blog-description field (there's no column for it), so the Atom `<subtitle>` and
+a home-page description meta are deferred — add a `description` column + a
+settings field first. 13 tests across FeedTest/OpenGraphTest/SitemapTest; both
+XML documents verified well-formed with a parser. Original sketch follows.
+
 Promotes RSS out of the deferred list. One feed per blog; a "follow" story
 without accounts, email, or federation. One session as scoped, with the
 Markdown caching decision as flagged prerequisite-or-companion.

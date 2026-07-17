@@ -103,6 +103,25 @@ class PublicBlogController extends Controller
     }
 
     /**
+     * A per-blog sitemap.xml: the home page, About, Links, and every published
+     * post. Same published() scope and suspended-author guard as everything
+     * else public, so it can never list a draft or a suspended blog.
+     */
+    public function sitemap(User $author): Response
+    {
+        $this->abortIfSuspended($author);
+
+        $posts = $author->posts()
+            ->published()
+            ->latest('published_at')
+            ->get(['slug', 'updated_at']);
+
+        return response()
+            ->view('sitemap', ['author' => $author, 'posts' => $posts])
+            ->header('Content-Type', 'application/xml; charset=UTF-8');
+    }
+
+    /**
      * The public About page.
      */
     public function about(User $author): View
