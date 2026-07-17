@@ -67,6 +67,17 @@ class Post extends Model
     }
 
     /**
+     * A short plain-text summary for meta descriptions and link previews.
+     *
+     * Drawn from the cached render (tags stripped, whitespace collapsed) so it
+     * reflects exactly what readers see, not raw Markdown syntax.
+     */
+    public function excerpt(int $length = 160): string
+    {
+        return str(strip_tags((string) $this->body_html))->squish()->limit($length)->value();
+    }
+
+    /**
      * The cached, pre-rendered post HTML.
      *
      * Returned as an HtmlString so views echo it with `{{ }}` like any other

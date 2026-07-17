@@ -1,4 +1,5 @@
-<x-public-layout :author="$author" :title="$post->title">
+<x-public-layout :author="$author" :title="$post->title"
+                 :description="$post->excerpt()" og-type="article" :published="$post->published_at">
     <article class="h-entry">
         <h1 class="text-3xl font-bold p-name">{{ $post->title }}</h1>
         <p class="text-sm text-theme-muted mt-2 mb-8">

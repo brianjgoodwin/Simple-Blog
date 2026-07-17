@@ -2,7 +2,7 @@
     Public reader-facing layout. Deliberately minimal and separate from the
     authenticated dashboard layout.
 --}}
-@props(['author', 'title' => null, 'homepage' => false])
+@props(['author', 'title' => null, 'homepage' => false, 'description' => null, 'ogType' => 'website', 'published' => null])
 <!DOCTYPE html>
 <html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
 <head>
@@ -13,6 +13,23 @@
          from any of the author's pages. --}}
     <link rel="alternate" type="application/atom+xml"
           title="{{ $author->name }}" href="{{ route('blog.feed', $author) }}">
+
+    {{-- Social / search preview: a pasted post link unfurls with its title,
+         author, and date. The description is a plain-text excerpt (post pages
+         only — the home and About/Links pages have no natural summary). --}}
+    <meta property="og:title" content="{{ $title ?? $author->name }}">
+    <meta property="og:type" content="{{ $ogType }}">
+    <meta property="og:url" content="{{ url()->current() }}">
+    <meta property="og:site_name" content="{{ $author->name }}">
+    <meta name="twitter:card" content="summary">
+    @if ($description)
+        <meta name="description" content="{{ $description }}">
+        <meta property="og:description" content="{{ $description }}">
+    @endif
+    @if ($ogType === 'article' && $published)
+        <meta property="article:published_time" content="{{ $published->toAtomString() }}">
+        <meta property="article:author" content="{{ $author->name }}">
+    @endif
     @vite(['resources/css/app.css'])
 </head>
 {{-- The theme is ONLY this data-theme attribute plus the font class — the
