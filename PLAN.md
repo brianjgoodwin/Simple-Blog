@@ -1,872 +1,234 @@
-# Simple Blog — Project Plan
+# Simple Blog — Design & Roadmap
 
-**Status:** Planning
-**Rigor:** "For real" — bottom-up, do it right, understand every layer.
-**Working name:** `simple-blog` (rename freely before we `laravel new`)
+**Status:** live, and released "for real."
 
-A minimal, multi-tenant, Markdown-only blogging application. One account = one blog.
-Invited authors only; the public reads. Built on Laravel + Breeze.
+What this app is, how it's built today, and where it's going. The chronological
+record of what was built and why lives in [BUILD-LOG.md](BUILD-LOG.md); this doc
+is the current design and the forward plan.
 
----
-
-## 1. Concept
-
-A tiny blog host. I invite people; each gets one account and one blog namespaced
-under their username. Authors write Markdown (no images), manage drafts and published
-posts, and edit two pages (About, Links). Readers browse a given author's published
-posts at clean public URLs. Deliberately minimal — "a simple way to put words online,"
-not a blogging platform.
+> A living document. Steer against it — don't treat it as fixed.
 
 ---
 
-## 2. Locked decisions
+## What it is
 
-| Area | Decision |
-|---|---|
-| Rigor | "For real" — bottom-up |
-| Content | Markdown only, no images |
-| Multi-tenancy | One account = one blog; invite-only, no open registration |
-| Public URLs | `/@{username}`, `/@{username}/{slug}`, `/@{username}/about`, `/@{username}/links` |
-| Usernames | Immutable after creation |
-| Auth | Laravel Breeze (Blade + Tailwind) |
-| Authoring | Separate `/dashboard`, auth-gated, scoped to logged-in user |
-| Pages | About/Links are editable Markdown, stored in DB |
-| Post lifecycle | `status` enum (`draft`/`published`, room for `unlisted`) + `published_at` |
-| Slugs | Auto from title, editable while draft, frozen at first publish |
-| Unpublish | Allowed; published → draft reuses the same frozen slug |
-| Visibility (v1) | Published = listed & public; drafts private. `unlisted` modeled-for, not built |
-| Account creation | `php artisan` command (no admin UI in v1) |
-| Public pages | Work with JavaScript disabled — curl-able, archivable, readable in 20 years. True today by accident; locked so it stays true on purpose |
+A small, invite-only home for writing. Each author gets one account and one blog
+namespaced under their username. Authors write **Markdown** (no images), manage
+drafts and published posts, and edit two pages (About, Links). Readers browse an
+author's published posts at clean public URLs. Deliberately minimal — "a simple
+way to put words online," not a blogging platform. The closest neighbours are
+Bear Blog and Mataroa.
 
 ---
 
-## 3. URL map
-
-| URL | Access | Purpose |
-|---|---|---|
-| `/@{username}` | public | Author's blog home — published posts, newest first |
-| `/@{username}/{slug}` | public | A single published post |
-| `/@{username}/about` | public | Author's About page |
-| `/@{username}/links` | public | Author's Links page |
-| `/login`, `/logout` | public | Breeze auth |
-| `/dashboard` | author only | Drafts, published, new post, pages — scoped to you |
-| `/dashboard/posts/create` | author only | New post editor |
-| `/dashboard/posts/{post}/edit` | author only | Edit a post you own |
-| `/dashboard/pages/{page}/edit` | author only | Edit About or Links |
-
-The `@` prefix on public blog routes deliberately prevents any collision between
-usernames and app routes (`/login`, `/dashboard`). No reserved-word list needed.
-
----
-
-## 4. Data model
-
-### `users` (extends the Breeze default)
-- `id`
-- `name` — display name (byline, blog title-ish)
-- `username` — unique, immutable, slug-safe (`^[a-z0-9_]+$`), used in URLs
-- `email` — unique (login + password reset)
-- `password`
-- timestamps
-- *(Breeze's default email-verification columns kept but unused in v1)*
-
-### `posts`
-- `id`
-- `user_id` — FK → users, indexed. Every post belongs to exactly one author.
-- `title`
-- `slug` — unique **per user** (composite unique on `user_id + slug`), frozen at first publish
-- `body` — Markdown source
-- `status` — enum: `draft` | `published` (leave room for `unlisted`)
-- `published_at` — nullable timestamp; set on first publish, retained on unpublish
-- timestamps
-- Indexes: `user_id`, composite `(user_id, slug)` unique, and `(user_id, status, published_at)` for the public listing query
-
-### `pages`
-- `id`
-- `user_id` — FK → users
-- `slug` — `about` | `links` (fixed set in v1)
-- `body` — Markdown source
-- timestamps
-- Unique on `(user_id, slug)`
-- Each user gets an About + Links row seeded on account creation
-
-**Relationships:** `User hasMany Post`, `User hasMany Page`, `Post belongsTo User`, `Page belongsTo User`.
-
----
-
-## 5. Security & correctness (the "for real" checklist)
-
-This is the part that separates "kind of working" from done. Non-negotiables:
-
-- **Ownership authorization.** Every dashboard action must verify the post/page belongs
-  to the logged-in user. Use a Laravel **Policy** (`PostPolicy`, `PagePolicy`) — not
-  ad-hoc `if` checks. This is the single most important thing to get right in a
-  multi-tenant app; a missing check lets user A edit user B's posts.
-- **Route-model binding scoped to the user.** Prefer `->scopeBindings()` / child route
-  binding so `/dashboard/posts/{post}` can only resolve a post the current user owns.
-- **Markdown rendering is the #1 XSS surface.** Rendered Markdown becomes HTML on public
-  pages. We must sanitize output (CommonMark with the raw-HTML input disabled, or an
-  HTML sanitizer pass). Decision needed — see §8.
-- **Mass-assignment discipline.** Guard `user_id`, `slug`, `status` — never let them be
-  set straight from request input. Set them server-side.
-- **Validation** on every write: username format/uniqueness, title/body presence, slug
-  format.
-- **CSRF** is automatic with Breeze Blade forms — keep forms server-rendered.
-- **404, not 403, for private content** on public routes — don't leak existence of drafts.
-
-I'll flag anything else as we build. (Per how we work: I call out security issues as we go.)
-
----
-
-## 6. Tech stack
-
-- **Laravel** (latest) + **Breeze** (Blade + Tailwind) for auth scaffolding
-- **PHP 8.4** locally (per this server's setup)
-- **Database:** SQLite for local dev (zero-config, file-based, perfect for "for real but
-  solo" — and trivial to point at MySQL later). Decision to confirm — see §8.
-- **Markdown:** `league/commonmark` (Laravel's `Str::markdown()` uses it under the hood)
-- **Testing:** Pest or PHPUnit — feature tests for the auth/ownership/visibility rules
-
----
-
-## 7. Build phases (implementation order)
-
-Each phase is a coherent, testable chunk sized for a focused session. We build,
-you steer, we verify before moving on.
-
-### Phase 0 — Scaffold
-- `laravel new`, install Breeze (Blade), configure SQLite, first migration + run
-- Commit a clean baseline. Confirm login works.
-
-### Phase 1 — Users & accounts
-- Add `username` (immutable) to users migration + model
-- `php artisan make:command CreateAuthor` → creates user + seeds their About/Links pages
-- Feature test: command creates a user with pages; username validation holds
-
-### Phase 2 — Posts CRUD (dashboard, private)
-- `posts` migration, `Post` model, `PostPolicy`
-- Dashboard: list drafts + published (scoped to you)
-- Create / edit / delete post; save-as-draft
-- Slug auto-generation from title (draft-editable)
-- Feature tests: a user cannot see or edit another user's posts (the big one)
-
-### Phase 3 — Publish lifecycle
-- Publish action: `draft → published`, set `published_at`, **freeze slug**
-- Unpublish action: `published → draft`, keep slug + `published_at`
-- Tests: slug frozen across publish/unpublish; timestamps behave
-
-### Phase 4 — Pages (About / Links)
-- Edit About/Links Markdown in dashboard
-- Tests: ownership scoping
-
-### Phase 5 — Public blog (reader-facing)
-- Routes: `/@{username}`, `/@{username}/{slug}`, `/@{username}/about`, `/links`
-- Render Markdown **safely** (see §5)
-- Only published posts listed/reachable; drafts + bad URLs → clean 404
-- Tests: drafts invisible publicly; 404s correct; XSS payload in Markdown is neutralized
-
-### Phase 6 — Polish & harden
-- Layout/typography for reading, empty states, minimal styling
-- Full test pass, security self-review, README with setup + `create-author` usage
-- Decide git remote (GitHub now; Gitea later per your infra plans)
-
-### Phase 7 — Deploy (DONE — LIVE 2026-07-07)
-- Put Simple Blog on a public HTTPS subdomain behind the shared Caddy proxy,
-  reusing the Puzzlebox pattern (systemd user service + `trustProxies` + Caddy
-  reverse_proxy + UFW restriction). Full step-by-step in
-  [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md).
-- **Decisions locked (2026-07-07):** go public (the goal, no deadline — deploy when
-  ready); subdomain `simpleblog.brianjgoodwin.dev`; port `8001`; keep SQLite in
-  production (read-heavy, near-zero write-concurrency = SQLite's best case; confirm
-  WAL mode on deploy). Rationale in docs/DEPLOYMENT.md.
-- No manual DNS step: a wildcard `*.brianjgoodwin.dev` already resolves the subdomain
-  (Puzzlebox has no per-subdomain record either). Going live = adding the Caddyfile
-  block + starting the service; the "flip it public" call is Brian's.
-
-### Phase 8 — Composer improvements (2026-07-10)
-Requested: live preview, writing ergonomics, autosave, publish-from-composer.
-
-- **Live Markdown preview** — server-rendered by a small authenticated endpoint
-  (`POST /dashboard/posts/preview`) through the SAME `App\Support\Markdown`
-  pipeline as the public pages, so the preview is byte-for-byte what publishes
-  and XSS stripping behaves identically. Write/Preview tabs; render on switch.
-- **Ergonomics** — auto-growing textarea, live word count, Ctrl/Cmd-S submits
-  the form. Alpine.js only (already a dependency), no new packages.
-- **Autosave — DRAFTS ONLY, on the edit form only.** Design decision: a
-  published post must never have a half-typed sentence pushed live by a timer;
-  published posts keep deliberate manual saves. New posts autosave after the
-  first manual "Save Draft" creates the record. Debounced (saves a moment
-  after typing pauses) via the existing update endpoint returning JSON.
-- **Publish from composer** — a second submit button on both forms
-  (`action=publish`) that SAVES the current content, then publishes. This also
-  fixes a pre-existing trap: the old separate Publish form published the last
-  saved version, silently ignoring unsaved edits in the textarea above it.
-  The standalone publish card on the edit page is removed; the unpublish card
-  stays (returning to draft is a distinct, deliberate act).
-
-### Phase 9 — Accessibility fixes (DONE — deployed 2026-07-10)
-From the WCAG 2.2 AA audit (full findings in the audit report / session log).
-Seven steps, ordered by impact; one commit per step so each is revertable and
-the history documents what each fix was for. No new packages.
-
-1. **Fix the unpublish button (functional bug).** `x-secondary-button`
-   defaults `type="button"`, so "Move back to draft" never submits its form.
-   Pass `type="submit"` in `posts/edit.blade.php`. Add a browser-shaped
-   regression guard: a feature test asserting the rendered edit page contains
-   a submit-type button inside the unpublish form (route tests already cover
-   the backend, which is why this slipped through).
-2. **Autosave live region.** In `posts/_fields.blade.php`, replace the three
-   `x-show` status spans with ONE persistent `<span role="status">` whose text
-   is bound with `x-text` (a persistent container whose contents change
-   announces reliably; toggling elements often doesn't). Word count stays
-   outside the region (per-keystroke announcements would be noise). Add
-   `x-cloak` so nothing flashes pre-Alpine.
-3. **Breeze nav + titles.** In `navigation.blade.php` / `dropdown.blade.php`:
-   visible focus ring on the account-menu trigger (it has `focus:outline-none`
-   with no replacement), `:aria-expanded` on trigger + hamburger,
-   `aria-label` on the hamburger, `@keydown.escape.window` to close the
-   dropdown, real focus style on dropdown items (gray-100-on-white is
-   invisible). Per-page `<title>` via a `$title` prop in `app.blade.php` /
-   `guest.blade.php` (public layout already does this correctly).
-4. **Drop the half-tablist.** Remove `role="tablist"` from the Write/Preview
-   wrapper; add `:aria-pressed` to the two buttons. Design decision: it is a
-   two-state mode toggle, not a tab widget — completing the full ARIA tabs
-   pattern (5 attributes + arrow-key JS) buys nothing here.
-5. **Own the pagination views.** `artisan vendor:publish
-   --tag=laravel-pagination` + publish `lang/en/pagination.php`. Fix in the
-   published copies: focus ring ≥3:1 (stock is gray-300 = 1.47:1), plain
-   "Previous"/"Next" lang strings (stock double-escapes `&laquo;` into the
-   aria-label), hover arrow contrast, strip `dark:` classes (layout has no
-   dark mode, so OS-dark users currently get dark buttons on a white page).
-6. **Heading hierarchy.** (a) Shift author Markdown headings +1 level in
-   `App\Support\Markdown` (`#` → h2, capped at h6) — single pipeline, so
-   preview and public output stay identical; river shows h2 titles with h2
-   author headings as siblings, post page shows h1 title over h2+, both sane.
-   Unit tests for the shift + cap. (b) Blog name becomes `<h1>` on the public
-   home; `public/page.blade.php` gets a heading; the authenticated header
-   slot becomes h1 (pages currently start at h2). Note: (a) changes rendered
-   HTML of existing posts — re-render caching (open decision) lands after
-   this, or must invalidate.
-7. **Contrast + affordance sweep.** Darken hovers instead of lightening
-   (Publish `hover:bg-green-600` → green-800; danger `hover:bg-red-500` →
-   red-700); `text-green-600` status → green-800; hamburger icon gray-400 →
-   gray-500; persistent underlines on public template links (touch users
-   never see `hover:underline`); footer ♥ wrapped `aria-hidden` with sr-only
-   "love"; `<time>` elements on dates; `<main>` on welcome/404; `role="status"`
-   on flash messages; dashboard lists become `<ul>`.
-
-Verify: full Pest suite + manual keyboard pass (tab through nav, dropdown,
-composer, pagination) + live check after deploy (`npm run build`,
-`view:clear`; no new routes so no `route:cache` concern).
-
-#### Phase 9 follow-up — second audit pass (2026-07-17)
-A re-audit found the Phase 9 base holding up well; three refinements landed
-this session (one commit), plus two items deliberately deferred below.
-
-Done:
-1. **Modal dialog semantics.** `components/modal.blade.php` had a working
-   focus trap but no dialog role. Added `role="dialog"`, `aria-modal="true"`,
-   and an optional `aria-labelledby` prop; the delete-account modal labels
-   itself via its heading id. Also restore focus to the triggering element on
-   close (it was falling to `<body>`).
-2. **Skip link.** `layouts/app.blade.php` gains a visible-on-focus "Skip to
-   content" link past the repeated dashboard nav (WCAG 2.4.1); `<main>` gets
-   `id="main" tabindex="-1"` as the target. Public reader layout skipped — its
-   header is a three-link band, not worth a skip target.
-3. **Form errors associated with fields.** `x-text-input` auto-wires
-   `aria-invalid` + `aria-describedby` from the default error bag;
-   `x-input-error` emits a stable `id="{field}-error"`. Named-bag inputs
-   (updatePassword, userDeletion) and the raw Markdown textareas set these
-   explicitly; radio-group errors attach to their `<fieldset>`. A screen
-   reader now announces the validation message on field focus, not just
-   visually below it. Verify: full Pest suite (133 pass).
-
-Deferred (low impact, noted so future-us doesn't forget):
-- **Dropdown menu semantics** (`components/dropdown.blade.php`). The trigger
-  is correct (`aria-haspopup`, `:aria-expanded`), but the open panel is a
-  plain `<div>` of links — no `role="menu"`/`menuitem`, focus doesn't move
-  into it on open or return to the trigger on close, no arrow-key
-  navigation. Soft finding: the items are ordinary links, so it degrades to
-  "a list of links" rather than being broken. Only worth doing if we adopt
-  the full menu-button pattern (roles + roving tabindex + arrow keys)
-  wholesale — a half-implementation would be worse than the current honest
-  links.
-- **`prefers-reduced-motion` fallback.** Modal and dropdown use Alpine
-  `x-transition` scale/opacity animations with no reduced-motion escape
-  hatch (WCAG 2.3.3, AAA). Cheap fix — a small `@media (prefers-reduced-
-  motion: reduce)` block in `app.css` neutralizing transition/animation
-  duration — but AAA and the transitions are brief, so it sits below the AA
-  line we hold ourselves to.
-
-### Phase 10 — Blog appearance settings (DONE — built & deployed 2026-07-12)
-Built as sketched (commit c9f6072): four themes (default / sage / dusk /
-dawn) + serif/sans toggle, settings form at /dashboard/appearance, enum
-columns not fillable, defaults = the pre-Phase-10 look exactly. The AA
-rule caught a real failure during the build: gray-500 muted text (dates,
-footer) clears 4.5:1 only on pure white — tinted themes darken muted text
-to #5d6673 via a --theme-muted variable. Adding a theme later: enum case +
-CSS block in app.css + matching Theme::swatch() hexes + the four-ratio
-contrast check (body gray-900, nav gray-600, muted, accent — all vs the
-theme background). Original sketch below, kept for the reasoning.
-
-**Three more themes (2026-07-17): Honey / Ember / Iris** — subtle yellow,
-orange, and purple tints, seven themes total. Accents are AA-verified on their
-tinted backgrounds (Honey #854d0e 6.43:1, Ember #b23c0e 5.41:1, Iris #6b21a8
-7.94:1), muted reuses #5d6673. The "verify before shipping" rule is now
-automated: `tests/Unit/ThemeContrastTest.php` parses every `[data-theme]` block
-straight from app.css, does the ratio math, and also asserts each `Theme`
-case's `swatch()` stays in sync with its CSS block — so a future theme (or an
-accidental edit) that fails contrast or drifts out of sync fails CI.
-
-Light per-author customization of the public blog. Deliberately small: a
-serif/sans toggle plus a handful of bundled, pre-verified themes. Roughly a
-one-session build; most of the work is choosing colors and verifying contrast.
-
-**Scope (v1):**
-- **Font toggle:** serif vs sans. System font stacks only (no webfonts on the
-  public pages — keeps the zero-external-requests posture). `prose` inherits
-  the family, so one conditional class on the public layout's `<body>` does it.
-- **Named themes, 3–4, bundled not mixable:** each theme = background tint +
-  accent color (links/underlines, masthead, header border). Body text stays
-  gray-900-on-light in every theme. Bundling matters: independent axes
-  multiply the contrast-verification work (4 accents × 3 backgrounds = 12
-  combos); bundled themes add (4 themes = 4 verifications, done once, by us).
-
-**Architecture decisions (locked at design time):**
-1. **Themes are CSS-only, never HTML-level.** A theme changes only a
-   `data-theme` attribute + font class on the public `<body>`, and CSS custom
-   properties in app.css say what each theme means. Rendered post HTML is
-   byte-identical across themes — so the open body_html caching decision
-   (Option A) is unaffected by this feature. If a theme ever needs different
-   markup, that's a scope change, not a tweak.
-2. **Tailwind is compile-time**, so no interpolated classes
-   (`bg-{{ $color }}-100` is invisible to the build). Every theme's CSS is
-   written out by hand in app.css using CSS variables; templates reference
-   `var(--accent)` etc. via a few custom utility lines.
-3. **Enum-backed columns, like PostStatus:** `theme` and `font` string columns
-   on `users`, each validated against a PHP enum. No settings table, no JSON
-   column — flexibility we've decided not to need. Adding a theme later =
-   enum case + CSS block + one contrast verification.
-4. **Every theme ships AA-verified.** The limited set is the a11y guarantee:
-   we check each theme's pairs once (incl. the decoration-gray-300 underline
-   equivalent per background) and authors can't produce a failing combination.
-
-**UI:** a small dashboard settings page (radio buttons, Save), "view your
-blog" link as the preview. No live preview in v1.
-
-**Explicitly out of scope (v1):**
-- Dark mode — looks like "one more theme," is actually a project: full
-  contrast re-audit, prose-invert, dark values for nav/pagination/footer.
-- Free-form colors or custom CSS — breaks the verified-once contrast
-  guarantee; author CSS on public pages is also an injection/exfiltration
-  surface (e.g. CSS url() beacons).
-- Layout options (column width, etc.) — against the opinionated character.
-- Author-supplied webfonts — external requests, licensing, and privacy.
-
-### Phase 11 — Invite codes (DONE — built & deployed 2026-07-12)
-Built as sketched (commit a0edc69). Open question RESOLVED by Brian: codes
-do NOT bind to an email — any code, any email, first-come-first-served;
-`note` is the memory aid. Codes are stored bare (12 chars) and formatted
-Xxxx-Xxxx-Xxxx only for display; consumption is a guarded
-`UPDATE ... WHERE used_at IS NULL` with its row count checked, because
-lockForUpdate() is a no-op on SQLite — the guarded update is the real
-race fence. Username rules and page seeding now live on User
-(usernameRules() / seedDefaultPages(), DEFAULT_PAGES shared with
-PageController's allow-list); a test pins that a registered account is
-identical to an author:create one. To invite someone:
-`php artisan invite:generate --note="for Dave"` and send the printed
-link. Original sketch below, kept for the reasoning.
-
-Reintroduce self-registration, gated by server-generated invite codes that
-Brian hand-distributes to testers. Framing matters: registration routes were
-REMOVED entirely (author:create is the only account path today), so this
-feature re-opens that endpoint — the code is the lock on it. Roughly a
-one-session build.
-
-**Data model — one `invites` table, deliberately dumb:**
-- `code` (string, unique), `note` (nullable — "for Dave" / batch label),
-  `used_at` (nullable timestamp), `used_by_id` (nullable FK users), timestamps.
-- Valid iff `used_at` is null — that single fact is the whole state machine;
-  no status enum (there is no third state). `used_by_id` = permanent audit
-  trail of which tester came from which code.
-- No `expires_at` in v1: revocation = delete the unused row.
-- Codes stored PLAINTEXT (decision, not oversight): hashed codes can't be
-  re-listed, forcing code tracking into a text file — a worse posture. Codes
-  are not passwords; an attacker who can read `invites` can read `users`.
-
-**Generation — artisan, matching the author:create pattern (no admin UI):**
-- `invite:generate {count} {--note=}` prints codes; `invite:list` shows
-  used/unused.
-- Format: random from an unambiguous alphabet (no 0/O/1/l), grouped for
-  humans (e.g. `Kk7m-Xw4r-Tn2p`), ~70 bits. Validation normalizes (strip
-  dashes/whitespace) before lookup.
-
-**Registration flow:**
-- Distribute as links: `/register?code=...` pre-fills an editable code field.
-  Form = code + name + username + email + password. Creates a plain author,
-  byte-identical to author:create output (no roles, no flags).
-- **Username rules must not fork:** extract the canonical rules from
-  CreateAuthor (`lowercase`, `regex:/^[a-z0-9_]+$/`, `max:30`, `unique`) into
-  one shared place (e.g. `User::usernameRules()`) BEFORE writing the second
-  copy, or they will drift.
-- **Atomic consumption:** inside `DB::transaction`, re-fetch the invite with
-  `lockForUpdate()`, confirm `used_at` still null, create user, stamp
-  `used_at`/`used_by_id`. Same shape as author:create's transaction, plus the
-  lock. Kills the two-signups-one-code race outright.
-
-**Security posture (this re-opens an unauthenticated endpoint):**
-- `throttle` middleware on the register routes (~5/min/IP) — this is what
-  actually makes code-guessing infeasible, and blunts username/email
-  enumeration probing.
-- Error messages CAN be honest ("code already used" vs "invalid") — at 70
-  bits, guessing can't reach a valid-but-used code, and honesty helps a
-  confused tester. Unlike password reset, no paranoid-generic errors needed.
-- No public link to /register anywhere — the URL travels with the invite.
-  Landing page's "invite-only" copy stays truthful.
-- NOT needed: email verification (testers are known), CAPTCHA (the code is
-  the gate).
-
-**Open question before building:** should a code bind to an email? Assumed
-NO — any code, any email, first-come-first-served; `note` is the memory aid.
-Pre-binding adds friction and schema for a problem hand-distribution doesn't
-have. Brian's call — he knows the testers.
-
-**Tests that matter:** used code rejected; code consumed exactly once under
-concurrent submits; registered account matches an artisan-created one;
-throttling kicks in.
-
-### Phase 12 — Atom feed + follow features (BUILT 2026-07-17)
-Built on the body_html cache (Option A, built the same day). Shipped in three
-commits: the feed, Open Graph meta, and the sitemap.
-
-- **Feed** at `/@{username}/feed` — published only, newest first, capped at 20;
-  hand-rolled Atom (`feed/atom.blade.php`); entry `<id>`s are permalinks;
-  `<content type="html">` carries the cached `body_html`, entity-encoded;
-  `abortIfSuspended` first. No firehose feed.
-- **Conditional GET** — `Last-Modified` = `max(updated_at)` of published posts
-  via one aggregate query; `If-Modified-Since` answered with a bare 304 before
-  any body is loaded.
-- **Discovery** — autodiscovery `<link>` in the public head + a visible Feed
-  nav link. **Microformats** (h-feed/h-entry/p-name/u-url/dt-published/
-  e-content, h-card on the author) in the same commit.
-- **Open Graph + description** — og:* + twitter:card on all public pages;
-  article tags + a `Post::excerpt()` description on post pages.
-- **sitemap.xml** at `/@{username}/sitemap.xml` — home, About, Links, published
-  posts; same published() scope and suspended guard.
-- **Blog description** — a nullable `description` column (max 200, not
-  fillable, blank stored as null), edited on the Appearance page. Shown under
-  the blog name on the home page, carried as the Atom `<subtitle>`, and used as
-  the home page's meta/OG description. Plain text, escaped on output (verified
-  with a `<`/`&`/quote value); this is what the sketch's `<subtitle>` needed.
-
-Open questions resolved: (1) `<updated>` uses honest `updated_at` — edits may
-re-surface a post, accepted as truthful; (2) OG rode along here. The
-blog-description field (originally deferred for lack of a column) followed
-immediately, so nothing from the sketch is outstanding. 21 tests across
-FeedTest/OpenGraphTest/SitemapTest/BlogDescriptionTest; both XML documents
-verified well-formed with a parser. Original sketch follows.
-
-Promotes RSS out of the deferred list. One feed per blog; a "follow" story
-without accounts, email, or federation. One session as scoped, with the
-Markdown caching decision as flagged prerequisite-or-companion.
-
-**The feed:**
-- `/@{username}/feed` — published posts only, newest first, capped ~20.
-- **No site-wide firehose feed** (decision): the landing page reveals nothing
-  about who has blogs here; an all-authors feed would quietly undo that. Same
-  reasoning as the drafts-404 posture. Don't add it innocently later.
-- **Hand-rolled Atom, one format done well.** All readers handle RSS 2.0 and
-  Atom alike; Atom is the better-specified format (unambiguous dates,
-  required unique IDs, defined model for embedded HTML). No package — it's
-  ~40 lines of Blade XML template and the format is worth learning. JSON
-  Feed later only if the mood strikes (second trivial template, same data).
-- **Full content** through App\Support\Markdown (matches the river's
-  character; XSS posture and heading shift carry into readers automatically).
-  Blade's {{ }} does the XML-escaping into <content type="html">.
-- **Entry IDs = permalink URLs**, permanent because slugs freeze at first
-  publish — an existing architectural property pays off; readers never
-  re-show old posts as new.
-- **Discovery:** <link rel="alternate" type="application/atom+xml"> in the
-  public layout head + a visible "Feed" text link in the blog nav/footer.
-
-**Conditional GET — the do-it-right piece:** readers poll every 15–60 min
-per subscriber forever; ~10 followers ≈ 500 req/day against single-process
-artisan serve rendering Markdown each hit. Set Last-Modified (and/or ETag)
-from max(updated_at) of published posts; answer If-Modified-Since with 304
-and an empty body (Symfony response layer has this built in). Turns feed
-polling from the biggest recurring cost into a rounding error. Feeds
-re-render every body on every non-304 hit — strongest argument yet to
-settle the body_html caching decision (Option A) before or with this phase.
-
-**Safety test that matters:** the feed uses the exact same published() scope
-as the public pages, with a test asserting a draft NEVER appears — the feed
-is a new place for the drafts-never-leak guarantee to fail.
-
-**Riding along:**
-- **Open Graph + description meta tags** on public pages — post links unfurl
-  with title/author/date when pasted in chat/social. A handful of meta lines
-  in the public layout; highest visible-impact-per-line item in the phase.
-- **sitemap.xml per blog** (optional) — same Blade-XML-over-published-posts
-  shape as the feed; more discovery than follow.
-- **Microformats (h-entry / h-card)** — a handful of classes (`h-entry`,
-  `p-name`, `e-content`, `dt-published`, `h-card` on the author name) on HTML
-  we already render. Makes every blog machine-readable to the IndieWeb
-  ecosystem (readers, webmention senders, archivers) without building any of
-  that ecosystem ourselves. Near-zero cost; belongs in the same commit as
-  feed discovery links.
-
-**Explicitly out (look cheap, aren't):**
-- Email subscriptions — deliverability, unsubscribe compliance, address
-  storage (privacy weight), bounces. RSS serves the same need here.
-- ActivityPub / follow-from-Mastodon — webfinger + HTTP signatures +
-  inbox/outbox + follower storage; a multi-week project with an operational
-  tail. RSS gets 80%; bridges cover the rest.
-- WebSub — needs hub coordination; buys nothing at this scale that 304s don't.
-
-**Open questions before building:**
-1. Atom `updated`: honest `updated_at` (edits may re-surface the post in
-   some readers — arguably a feature) vs quiet `published_at` (corrections
-   never re-surface). Recommendation: honest `updated_at`. Brian's call.
-2. Do the OG meta tags ride along here or become their own line item?
-
-### Phase 13 — Author export (DONE — built & deployed 2026-07-11)
-Shipped as sketched (commit 5d9985a): `App\Support\PostExporter` +
-single-action `ExportController` at `GET /dashboard/export`, Export card on
-the dashboard, six tests (99 total green). Title front-matter is
-JSON-encoded (a JSON string is a valid YAML scalar — no hand-rolled
-escaping). The cross-author scoping test was verified to fail when scoping
-is deliberately broken. Prod deploy required `route:cache` (new route).
-Original sketch follows.
-The feature that IS the project's philosophy: if the pitch is "escape walled
-gardens," the acid test is whether authors can escape US. Every author can
-download everything they've written, in the format they wrote it, at any time.
-Cheap precisely because of a founding decision — we never converted their
-words to anything else; the Markdown is sitting in a SQLite column.
-
-**Format — a zip of plain files, no proprietary manifest:**
-- One `.md` file per post (drafts included — they're the author's words too),
-  named by slug (drafts: slug-so-far or a title-derived fallback).
-- Minimal YAML front-matter per file: `title`, `slug`, `status`,
-  `published_at`, `created_at`, `updated_at`. Nothing app-specific — the
-  files should drop into Jekyll/Hugo/Kirby/anything with light massaging.
-- `about.md` and `links.md` alongside.
-- No HTML in the zip: the Markdown is the canonical form; rendered HTML is
-  our presentation, not their content.
-
-**Mechanics:**
-- One button on the dashboard (or profile page): `GET /dashboard/export` →
-  streamed `ZipArchive` response, auth'd, scoped to the logged-in user.
-  No queue, no temp-file lifecycle if we stream; a blog of hundreds of
-  Markdown posts zips in well under a second.
-- Serves double duty as the author's personal backup — the systemd backup
-  covers Brian against disk loss; export covers authors against Brian
-  losing interest in 2029.
-
-**Import (the natural sequel, separate line item):** accept the same zip
-back. Gives migration between instances for free and forces us to keep the
-export format honest. Not v1 of this phase — export alone ships value.
-
-**Tests that matter:** export contains drafts + pages; another author's
-posts NEVER appear (same scoping guarantee as the dashboard); front-matter
-round-trips a post with quotes/colons/unicode in the title.
-
-### Phase 14 — Operator hardening (DONE — built & deployed 2026-07-11)
-Shipped as sketched (commit fec58c0): nullable `suspended_at` (NOT fillable),
-`author:suspend`/`author:unsuspend`, 404 guards at every public entry point
-(guard verified to fail when removed), login rejected with generic
-auth.failed + limiter hit, `EnsureAuthorNotSuspended` ends existing sessions
-on next request (file session driver = no per-user session destruction, so
-next-request is the honest design). `PublicContentSecurityPolicy` on all
-reader-facing routes, skipped when Vite is hot; known gap: binding-layer
-404s carry no header (no content to protect there). `/acceptable-use` live,
-linked from landing. 13 tests, 112 total green. SECURITY.md updated
-(CSP deferral closed, operator-controls section). Prod migration ran clean.
-REMINDER FOR PHASE 11: link /acceptable-use from the register page, and the
-invite flow's Phase 11 unblock condition is now met. Original sketch follows.
-The moment invites land, this stops being a blog and becomes hosting: other
-people's words, under Brian's name, on Brian's server. Phase 11 must not go
-live before this exists. Numbered 14 by creation order, sequenced before 11.
-
-**1. Suspend/unsuspend tooling (artisan, matching author:create — no UI):**
-- `author:suspend {username}` / `author:unsuspend {username}` — a nullable
-  `suspended_at` timestamp on users (same one-fact pattern as invites'
-  `used_at`; no status enum).
-- Suspended blog = 404 everywhere public (home, posts, pages, feed) — the
-  existing 404-not-403 posture extended: a suspended blog is
-  indistinguishable from one that never existed. Suspended author can't log
-  in (or is logged out via session invalidation) — decide at build time.
-- This is the difference between handling a problem at 11pm with a command
-  and hand-editing production SQLite while stressed.
-
-**2. Content-Security-Policy header on public pages:**
-- The Markdown pipeline strips HTML and tests pin that — CSP is the backstop
-  for the day a CommonMark CVE or a future feature pokes a hole in it.
-  Defense in depth is cheap here BECAUSE the pages are so simple; a strict
-  CSP that would be agony on a JS-heavy site is nearly free on ours.
-- Middleware on the public routes; roughly `default-src 'none'; style-src
-  'self'; img-src 'self'; base-uri 'none'; form-action 'self'` — exact
-  directives verified at build time against what the pages actually load
-  (Vite asset origin, any inline styles Breeze/Alpine need on authed pages —
-  which is why this starts public-routes-only).
-- Test: response header present on `/@user` and absent nothing breaks —
-  plus a manual pass with the browser console open (CSP violations are
-  loud there).
-
-**3. Acceptable-use paragraph (one paragraph, not legal theater):**
-- Written and linked from the register page before the first invite goes
-  out. Its real function: makes suspending someone a policy action instead
-  of a personal fight with a friend. Also states the no-analytics posture
-  out loud (see "Deliberately never" below).
-
-### Smaller sketches (designed 2026-07-11, not scheduled)
-Each is self-contained and roughly a session or less; none blocks anything.
-
-- **Archive page (BUILT 2026-07-17)** — `/@{username}/archive`: every
-  published title, newest first, grouped by year (one query + `groupBy` on the
-  year, one template). Reserved word before the `{slug}` route; `published()`
-  scope + `abortIfSuspended`, so drafts never appear. Linked from the blog nav,
-  which is now `flex-wrap` (Posts / Archive / About / Links / Feed — five items
-  wrap gracefully on narrow screens rather than being thinned out). Six tests.
-- **Privacy page (BUILT 2026-07-17)** — host-level static `/privacy`, a sibling
-  of `/acceptable-use` (self-contained, not `x-public-layout`). A short, honest
-  policy: what we store (account fields, the Markdown, brief server logs), what
-  readers get (public pages load nothing but page + stylesheet — the CSP proves
-  it), and export/delete as the exit. Linked from the site-footer, so it's
-  reachable from every blog and the landing page. Two tests.
-- **Post scheduling** — `status`+`published_at` already model it: publish
-  with a future timestamp, public scopes become `published_at <= now()`,
-  slug freezes at the moment of *scheduling* (it's leaving the author's
-  hands). CATCH: "goes live" needs no process at all with the scope
-  approach (time passes, query starts matching) — but autosave-vs-published
-  rules and the composer UI need a third mental state, and the feed's
-  Last-Modified math must use `max(published_at where <= now())`. Cheap
-  mechanically, subtle at the edges — sketch says: don't rush it.
-
-  **Complications found reviewing this against built code (2026-07-17) — not
-  yet built, read before starting:**
-  - **`scopePublished` is status-only today** (`Post::scopePublished` =
-    `where('status', Published)`, no time gate). Adding `->where('published_at',
-    '<=', now())` there fixes every public surface at once (home, post, feed,
-    sitemap, archive) — but the *same* scope backs the dashboard's "Published"
-    list (`PostController::index`), which would then silently hide scheduled
-    posts. That's the "third state": the dashboard needs a **Scheduled** bucket
-    (status Published, `published_at` in the future) distinct from live
-    Published. Decide whether a scheduled post's public URL 404s until live
-    (consistent with drafts) — it should.
-  - **⚠️ It breaks the feed's conditional GET as built.** Phase 12 set
-    `Last-Modified = max(updated_at)` of published posts, correct only while
-    "published" == "live" (a write is the only way a post enters the feed).
-    Once posts go live by the clock, a scheduled post crossing `now()` is a
-    content change **no write triggers**, and its `updated_at` is old — so
-    `max(updated_at)` won't advance and readers holding a 304 never see it.
-    Fix: compute the feed timestamp as `max(greatest(published_at, updated_at))`
-    over live posts (published_at catches going-live; updated_at catches edits).
-    Land this fix in the same change, with a test that a post going live
-    advances Last-Modified.
-  - **What already works:** slug freezing is `isPublished()` (status-based), so
-    it freezes at schedule time as wanted; `publish()` just needs a path that
-    accepts + validates a future `published_at` instead of `?? now()`.
-  - **Autosave nuance:** autosave is disabled for `isPublished()` posts
-    (`_fields.blade.php`); a scheduled-but-not-live post inherits that. Maybe
-    fine, maybe you want autosave until it actually goes live — a UX call.
-  - **Verdict:** do this LAST of the smaller sketches and deliberately — it's
-    the only one that reaches back into the feed's caching logic.
-- **Per-blog search (BUILT 2026-07-17)** — search box on the blog home,
-  published-only (the guarantee again). Wants the SOURCE Markdown (`body`), not
-  `body_html` — another vote for keeping `body` canonical, which we did.
-
-  Built the LIKE option below: a `Post::scopeSearch($term)` (title OR body,
-  wildcards escaped with `=` for SQLite/MySQL portability) composed with
-  `published()`; a reused search-box partial on the blog home; a
-  `/@{username}/search?q=` results page (paginated, blank query shows a prompt,
-  no matches reports it); `abortIfSuspended` first. 11 tests, including the
-  drafts-never-leak guarantee and literal `%`/`_` handling. The FULLTEXT swap
-  stays a drop-in: replace the scope body, callers untouched.
-
-  **Correction (2026-07-17): the original SQLite-FTS5 plan does NOT work — prod
-  is MySQL** (confirmed with Brian), and FTS5 is SQLite-only. Options for the
-  actual SQLite-dev / MySQL-prod split, cheapest first:
-  - **`LIKE` scope (RECOMMENDED for now).** `where('title','like',"%$q%")
-    ->orWhere('body','like',"%$q%")` on the `published()` scope. Portable —
-    *identical* behavior in SQLite dev and MySQL prod — no migration, no index,
-    no virtual table, and it tests anywhere. No ranking or stemming, and it's a
-    full scan, but at single-author-blog scale that's a non-issue. Highest
-    reward-per-effort here; ~½ session, mostly the results template.
-  - **MySQL native `FULLTEXT` + `MATCH…AGAINST`.** Real relevance ranking and
-    word-aware matching; a `FULLTEXT(title, body)` index is one migration. But
-    SQLite (dev + the test DB) has no `MATCH…AGAINST`, so the query must be
-    driver-gated (FULLTEXT on MySQL, `LIKE` fallback on SQLite) — meaning the
-    thing you test in dev isn't the thing that runs in prod. More power, real
-    divergence cost. Worth it only once post counts make `LIKE` feel slow.
-  - **Scout + a search engine** (Meilisearch/Typesense) — overkill and against
-    the "state lives in the DB, plainly" ethos; not lower-effort. Skip.
-  - **Recommendation:** ship `LIKE` behind a `scopeSearch($q)` on Post; if it
-    ever outgrows that, swap the scope body for driver-gated FULLTEXT without
-    touching callers.
-- **Blog description + light SEO (sketched 2026-07-12)** — one nullable,
-  author-editable `description` column on users (~160-char guidance in the
-  settings form) feeding `<meta name="description">` and `og:description`
-  on that blog's pages, the Phase 12 Atom `<subtitle>`, and the h-card
-  note. Optional companion toggle: per-author search-engine opt-out via
-  `<meta name="robots" content="noindex">` on their pages — deliberately
-  NOT a robots.txt Disallow, for two reasons: a Disallow blocks crawling so
-  the noindex is never seen (bare URLs can still be listed), and per-author
-  Disallow lines turn robots.txt into a public directory of who opted out.
-  A noindexed author is also excluded from any future sitemap. The settings
-  screen should say plainly: description + semantic HTML + sitemap IS the
-  whole legitimate SEO story here. DROPPED (Brian, 2026-07-12): per-author
-  *AI-crawler* opt-out — the only mechanism with real adoption is robots.txt
-  user-agent groups (GPTBot, CCBot, …), which both rots as a list and
-  enumerates opted-out usernames publicly; too much complexity for too
-  little payoff. Shares the author-settings form Phase 10 introduces.
-- **Custom domains per author** — the long-horizon ethos feature: nothing
-  says "you own this" like `theirname.com` on their blog. Real work — Caddy
-  on-demand TLS, a verified `domain` column, host-based routing coexisting
-  with `trustHosts`, per-domain canonical URLs in feeds/OG tags. Filed as
-  someday; this is where the project's philosophy ultimately points.
-
-### Public-page performance pass (DONE 2026-07-17)
-Indexes were already right (users.username unique, pages (user_id, slug)
-unique, posts (user_id, status, published_at) composite — every public query
-covered). Two changes landed:
-- **Narrow selects** on the river, feed, and search: since `body_html`, the
-  Markdown source `body` was dead weight on every public read (each row was
-  carrying both columns — roughly double the payload for a 10-post page).
-  Archive and sitemap already selected narrow.
-- **Conditional GET on the post permalink**, same pattern as the feed:
-  Laravel's default `Cache-Control: no-cache, private` makes browsers
-  revalidate every visit, so a Last-Modified + 304 lets repeat readers reuse
-  their cached copy. `Last-Modified = max(post.updated_at, author.updated_at)`
-  — the author term catches name/description/theme changes that alter the page
-  shell. Safe on the permalink ONLY because unpublish/delete 404s the next
-  request before the 304 check.
-
-Flagged, deliberately NOT done — don't add these innocently later:
-- **No conditional GET on the home river**: unpublishing bumps the post's
-  `updated_at` but drops it from the published set, so `max(updated_at)` of
-  published posts doesn't advance — a 304 would keep serving a cached river
-  that still shows the unpublished post. (The FEED shares this staleness
-  wrinkle as shipped; tolerable there because a 304 only tells a reader "keep
-  your copy" — they already have the content — and any later change
-  re-freshens. A future fix would need a per-author content timestamp.)
-- **Sessions still start on public routes**: the web middleware group opens a
-  session and sets a cookie on every reader request, which also forces
-  responses uncacheable by shared proxies. Splitting public routes off the
-  session stack is a real win but touches the auth/CSRF posture (and the
-  landing page's @auth check) — its own deliberate change, not a rider.
-- **`Cache-Control: public, max-age=N`** on public pages would serve stale
-  content after edits for up to N; revalidation (the 304 path) fits better.
-
-### DECIDED — Markdown render caching: Option A (chosen by Brian 2026-07-11; BUILT 2026-07-17)
-Built as decided: nullable `body_html` on posts, filled from
-`App\Support\Markdown` in Post's single render path (a `saving` hook that
-re-renders whenever `body` is dirty — so the controller store/update, the
-composer autosave, the factory, and tinker all populate it, and it can't
-drift). A `bodyHtml` accessor returns an `HtmlString` so the public views
-echo `$post->body_html` with `{{ }}` — the safety lives in the render path,
-not the view. `php artisan posts:rerender` rebuilds every row after a
-pipeline change, using `withoutTimestamps` so a mechanical re-render never
-bumps `updated_at` (which the Phase 12 feed's `<updated>` will read). Six
-tests cover cache-on-save, update, XSS stripping, body-untouched saves, and
-the command. Pages keep rendering live (only two per blog, not polled). The
-migration backfills existing rows. Next: Phase 12 feed. Options preserved
-for the record:
-Referenced throughout the sketches above; the actual options live here. The
-problem: public pages render Markdown → HTML on every request. The river
-renders 10 full bodies per hit, and Phase 12 feeds will re-render every body
-on every non-304 poll, forever, against single-process `artisan serve`.
-Trivial today (one author, low traffic); the feed changes the math.
-
-**Option A — `body_html` column (RECOMMENDED):**
-- Nullable `body_html` on posts, filled from `App\Support\Markdown` in the
-  single write path whenever `body` is saved. Public pages, river, and feed
-  read the column; `body` (Markdown) stays the canonical content — which is
-  also what export (Phase 13) and FTS search want.
-- Plus `posts:rerender` artisan command: re-runs the pipeline over all posts.
-  Run it whenever the pipeline itself changes (a Phase-9-style heading shift,
-  a CommonMark upgrade) — that's the whole invalidation story. No TTLs, no
-  cache keys, deterministic, survives restarts, costs one column in a
-  database that already holds the content.
-- Honest cost: stored HTML can drift from `body` if a write path ever skips
-  the render. Mitigation is architectural — exactly one place writes posts —
-  plus a test asserting save populates `body_html`.
-
-**Option B — `Cache::remember` around the render:**
-- Key on `post-{id}-{updated_at}`, file cache driver. No migration, no
-  command. But: adds invalidation semantics where Option A has none, cold
-  cache after every `cache:clear`/deploy re-renders everything (feed polling
-  hits exactly then), and the cache is a second copy of truth rather than a
-  column sitting next to its source. More moving parts for a worse
-  guarantee.
-
-**Option C — defer, render per request:**
-- Legitimate at current scale. Stops being legitimate at Phase 12: feeds are
-  the first client that polls unattended. If feeds ship, this option
-  expires.
-
-**Why A wins:** the app's whole character is "state lives in SQLite, plainly."
-A cached column with an explicit re-render command matches that; a cache
-layer with TTL semantics doesn't. Interactions already noted in the
-sketches: Phase 10 themes are CSS-only so cached HTML is theme-independent;
-Phase 9's heading shift happened before caching exists, so nothing needed
-invalidating; FTS search wants source Markdown, which stays canonical
-either way.
-
-**Decided:** Option A, per the reasoning above.
-
-### Deliberately never (the restraint is a feature)
-Stated here so future-us doesn't add one innocently. These aren't hard to
-build — they're the mechanism by which walled gardens made writing
-performative, and their absence is this project's differentiator:
+## Principles
+
+The restraint **is** the product. These aren't limitations to fix later; they're
+the differentiator.
+
+- **Markdown only, no images.** The words are the point. Markdown is the
+  canonical stored form, which is what makes export and longevity real.
+- **No analytics, no tracking, no ads.** We don't watch you write, and we don't
+  watch anyone read. Public pages make **zero third-party requests** — the CSP
+  enforces it.
+- **Public pages work with JavaScript disabled.** Curl-able, archivable,
+  readable in 20 years. Locked so it stays true on purpose.
+- **Your words are yours.** Export everything as Markdown at any time; deleting
+  your account removes it. Leaving is always an option.
+- **One account = one blog.** Invite-only; no open self-serve registration
+  (yet — see Roadmap).
+- **404, never 403, for anything non-public.** A draft, an unknown user, or a
+  suspended blog is indistinguishable from one that never existed.
+
+### Deliberately never
+Stated so future-us doesn't add one innocently. These are the mechanisms by
+which walled gardens made writing performative:
 
 - View counters, likes, reactions, follower counts
 - Trending / recommended / algorithmic anything
-- Analytics on authors or readers (no tracking scripts, no server-side
-  pageview logging beyond standard access logs)
-- A `<meta name="keywords">` field — ignored by every major search engine
-  since roughly 2009; offering it would be settings-theater
+- Analytics on authors or readers (no tracking scripts; no server-side pageview
+  logging beyond standard access logs)
+- A `<meta name="keywords">` field — ignored by search engines since ~2009;
+  offering it would be settings-theatre
 
-Say it in the README and the acceptable-use page: "no analytics on you or
-your readers" is a feature we get by doing nothing, forever.
+"No analytics on you or your readers" is a feature we get by doing nothing,
+forever — and it's said out loud on the privacy and acceptable-use pages.
+
+---
+
+## Architecture (as built)
+
+### URL map
+
+| URL | Access | Purpose |
+|---|---|---|
+| `/@{username}` | public | Blog home — published posts, newest first, 5/page |
+| `/@{username}/{slug}` | public | A single published post (permalink) |
+| `/@{username}/about`, `/links` | public | The two editable pages |
+| `/@{username}/archive` | public | Every published title, grouped by year |
+| `/@{username}/search?q=` | public | Full-text-ish search over published posts |
+| `/@{username}/feed` | public | Atom feed (published only, capped at 20) |
+| `/@{username}/sitemap.xml` | public | Per-blog sitemap |
+| `/`, `/acceptable-use`, `/privacy` | public | Host landing + static policy pages |
+| `/login`, `/logout`, `/register` | public | Breeze auth; register is invite-gated |
+| `/dashboard` | author | Drafts, published, pages, appearance, export |
+| `/dashboard/posts/{create,edit,preview}` | author | Composer (live preview, autosave) |
+| `/dashboard/pages/{slug}/edit` | author | Edit About / Links |
+| `/dashboard/{appearance,export}` | author | Theme/font/description; Markdown zip |
+
+The `@` prefix on public routes prevents any collision with app routes; reserved
+words (`about`, `links`, `archive`, `search`, `feed`, `sitemap.xml`) are declared
+before the catch-all `{slug}`.
+
+### Data model
+
+- **`users`** (extends Breeze) — `name`, immutable `username` (`^[a-z0-9_]+$`,
+  slug-safe, in URLs), `email`, `password`; `suspended_at` (nullable, **not
+  fillable**); `theme` + `font` (enum-backed, not fillable); `description`
+  (nullable, ≤200, the blog tagline). Rules live once in `User::usernameRules()`;
+  About/Links seeded via `User::seedDefaultPages()`.
+- **`posts`** — `user_id` (FK, indexed), `title`, `slug` (unique per user, frozen
+  at first publish), `body` (Markdown source, canonical), `body_html` (cached
+  render, nullable), `status` (`draft`|`published`), `published_at` (set on first
+  publish, retained on unpublish). Indexes: `(user_id, slug)` unique,
+  `(user_id, status, published_at)` for the public listing.
+- **`pages`** — `user_id`, `slug` (`about`|`links`), `body`. Unique
+  `(user_id, slug)`.
+- **`invites`** — `code` (unique, plaintext), `note`, `used_at`, `used_by_id`.
+  Valid iff `used_at IS NULL`.
+
+### Rendering pipeline (the #1 XSS surface)
+All public Markdown flows through `App\Support\Markdown` (GitHub-flavored
+CommonMark, `html_input => 'strip'`, `allow_unsafe_links => false`, headings
+shifted down one level so no body emits an `<h1>`). It renders **once**, into the
+cached `body_html`, via a `Post` `saving` hook — the single write path, so the
+cache can't drift from the source. `posts:rerender` rebuilds all rows after a
+pipeline change. The composer preview and the feed use the exact same pipeline.
+
+### Security posture
+Ownership via `PostPolicy`/`PagePolicy` (never ad-hoc `if`s); mass-assignment
+guards on `user_id`, `slug`, `status`, `suspended_at`, `theme`, `font`;
+validation on every write; CSRF from server-rendered Breeze forms; 404-not-403 on
+public routes; a strict CSP on the public surface; invite consumption fenced by a
+guarded `UPDATE ... WHERE used_at IS NULL`; register routes throttled.
+
+### Performance
+Every public query is index-covered. Public reads select narrow (no `body`
+column — the views render `body_html`). The feed and the post permalink support
+conditional GET (`Last-Modified` + 304). See BUILD-LOG for what was deliberately
+*not* cached and why.
+
+### Tech stack
+Laravel 13 + Breeze (Blade + Tailwind), Alpine.js (composer only), PHP 8.4,
+`league/commonmark`, Pest. SQLite in both local dev and production.
+
+---
+
+## Roadmap
+
+Nothing here blocks anything; sequence by mood and by what moves the product
+toward "a couple hundred paying users." Grouped by intent, not priority.
+
+### Near-term sketches (designed, not built)
+
+- **Post scheduling.** `status` + `published_at` already model it: publish with a
+  future timestamp; public scopes become `published_at <= now()`; slug freezes at
+  *scheduling*. Cheap mechanically, subtle at the edges — **read the
+  complications before starting** (recorded in full in BUILD-LOG's spirit, summary
+  here):
+  - `scopePublished` is status-only today; adding a time gate ripples to every
+    public surface at once (good) *and* to the dashboard's "Published" list, which
+    then needs a distinct **Scheduled** bucket (the "third state").
+  - **It breaks the feed's conditional GET as built.** A scheduled post crossing
+    `now()` is a content change no *write* triggers, and its `updated_at` is old,
+    so `max(updated_at)` won't advance and 304-holding readers never see it. Fix:
+    compute the feed timestamp as `max(greatest(published_at, updated_at))` over
+    live posts, in the same change. Do this one **last and deliberately** — it's
+    the only sketch that reaches back into the feed's caching logic.
+- **Author-facing import.** The natural sequel to export, and reframed as an
+  **acquisition** lever (it removes switching cost for people leaving WordPress /
+  Medium / Substack). Architecture: one **native importer** that accepts the
+  export zip (Markdown + YAML front-matter) — which also keeps the export format
+  honest via a round-trip test — with **format converters** (e.g. WordPress WXR)
+  that translate a foreign export into that native shape, then hand off. Because
+  imports go through the normal model layer, `body_html` renders and the XSS
+  pipeline sanitizes automatically. The hard call is images (locked out): convert
+  `<img>` to a plain link to the original, and report exactly what was
+  transformed. Ship a **dry-run report** before writing anything.
+- **Light SEO opt-out.** A per-author `<meta name="robots" content="noindex">`
+  toggle (and exclusion from the sitemap) — deliberately **not** a `robots.txt`
+  Disallow, which would block the crawl so the noindex is never seen, and would
+  turn `robots.txt` into a public list of who opted out. (The description meta /
+  OG / sitemap that this sketch also proposed are already built.)
+- **Accessibility leftovers.** Dropdown menu semantics (the panel is plain links)
+  and a `prefers-reduced-motion` fallback for modal/dropdown transitions — both
+  low-impact, deferred from the Phase 9 follow-up.
+
+### Commercialization ("release for real")
+The blogging tool is essentially done; the *business* is the roadmap. At ~200
+users × ~$30/yr this is a lovely side-project — so favour **low-ops, low-support**
+features. This is mostly new territory for the codebase.
+
+- **Self-serve signup.** The invite system can *become* the beta gate, then relax
+  into open (or waitlisted) registration.
+- **Billing.** Laravel Cashier + Stripe — subscriptions, customer portal, trials,
+  dunning. The single biggest new subsystem.
+- **Transactional email that lands.** Password resets, receipts, "your card
+  failed" — a real provider (Postmark), SPF/DKIM, bounces. Email becomes
+  load-bearing for the first time.
+- **Custom domains** — the star feature for this positioning: for a "you own your
+  words" product, `yourname.com` is both the emotional payoff *and* the natural
+  paid tier. Real work — Caddy on-demand TLS, a verified `domain` column,
+  host-based routing coexisting with `trustHosts`, per-domain canonical URLs in
+  feeds/OG. This is where the philosophy ultimately points.
+- **The pricing fork.** Fewer upsell levers by design (no images, no analytics to
+  gate). Cleanest fit with the ethos: **free on a subdomain / `/@you`, paid
+  unlocks a custom domain** — or flat-paid with a trial. Pick one; it drives
+  everything else.
+
+### Synergistic features (fit the grain, exploit what's already built)
+
+- **Webmentions.** The IndieWeb-native, ethos-pure alternative to comments — and
+  we already emit `h-entry`/`h-card`. Replies live on the sender's own blog; we
+  show backlinks. No comment DB, no moderation, no reader PII. Highest synergy;
+  it's also the honest answer to "can readers respond?".
+- **Reading-experience polish.** Auto table-of-contents (byproduct of the
+  heading pass), reading time (`wordCount/200`), prev/next nav, **footnotes**, and
+  typographic niceties (smart quotes, em-dashes, widows). All static, no-JS,
+  no-tracking, pipeline-local; cheap and immediately felt for a *writing* product.
+- **"Make a book of your blog" — EPUB / PDF export.** A natural, emotionally
+  resonant extension of the Markdown export, and a clean paid perk. A full
+  static-site export is the literal proof of "readable in 20 years."
+- **POSSE** — publish here, syndicate to Mastodon/Bluesky; your site stays
+  canonical and syndication brings readers back. Growth that *reinforces* "own
+  your words."
+- **Structure writers crave:** wiki-links / backlinks (`[[post]]`, resolved in the
+  render pass — digital-garden catnip), post series/collections, and private
+  `noindex` draft-share links for feedback without publishing.
+
+### Strategic forks (decide consciously)
+
+- **Email newsletters — stay no (recommendation).** The Substack-refugee audience
+  will ask, but it's the biggest ops/ethics burden imaginable (reader PII,
+  deliverability, unsubscribe compliance) and it directly contradicts "we don't
+  watch readers." RSS + custom domains is the "following" story. Deciding this
+  defines what the product *is*.
+- **"How many read me?"** — writers will ask constantly, and the principles forbid
+  tracking. The answer is a confident *"we deliberately don't,"* made into
+  marketing — not a feature.
+- **Discoverability vs. the privacy posture.** The landing page reveals nothing
+  about who has blogs here (no directory). That protects authors but forgoes a
+  network-effect channel. Probably right to keep; know the trade.
+- **The "resist" list.** Custom CSS (breaks the CSP/no-JS/consistency posture,
+  generates support), reader analytics, and freeform microposts-drifting-toward-
+  social are the three things well-meaning users will request that would dissolve
+  the differentiation. "No, and here's why" is itself a roadmap item.
+- **Accessibility as positioning.** We've invested more in a11y than almost any
+  blog host (modal semantics, skip links, an automated contrast guardrail, AA
+  themes). *"The most accessible place to publish"* is ownable, true, and matters
+  to audiences with budgets (education, institutions). A tiny per-blog
+  accessibility-statement page would signal it for almost no code.
 
 ### Deferred (modeled-for, not built)
-- `unlisted` post state
-- Admin UI for account creation
-- Username change + redirects
-- Author-facing import of the Phase 13 export zip (export ships first)
-- Images, tags, comments — explicitly out of scope for v1
-  (RSS was on this list; promoted to the Phase 12 sketch above.
-  Archive/search/scheduling similarly promoted to Smaller sketches.)
-
-**Suggested pickup order across the sketches (2026-07-11):** Markdown
-caching is DECIDED (Option A — see above; build it with or just before
-Phase 12) → Phase 13 export (DONE 2026-07-11) → Phase 14 hardening (DONE
-2026-07-11) → Phase 10 appearance (DONE 2026-07-12) → Phase 11 invites
-(DONE 2026-07-12) →
-Phase 12 feed (+ body_html implementation + microformats/sitemap riders) →
-archive page → the rest as mood strikes. The remaining smaller sketches
-(archive, search, scheduling, description/SEO) slot in anywhere; the
-description/SEO sketch got cheaper now that the settings form exists.
-
----
-
-## 8. Open decisions before Phase 0
-
-Small, but they touch setup:
-
-1. **App name** — keeps working name `simple-blog`, or something you'd actually ship
-   under? (Threads through namespace + repo.)
-2. **Database** — SQLite for local dev (my recommendation), or stand up MySQL in Docker
-   now to mirror eventual production? Note our infra memo: the Ondrej PHP PPA is
-   unreachable inside Docker here, so PHP runs locally regardless — SQLite keeps Phase 0
-   friction near zero.
-3. **Markdown sanitization approach** — CommonMark with raw-HTML input disabled (simplest,
-   safe, but authors can't embed raw HTML — fine for you), vs. allow-HTML-then-sanitize
-   (more flexible, more surface). I lean strongly toward **disable raw HTML** for v1.
-4. **Test framework** — Pest (modern, expressive, what most new Laravel projects use) vs.
-   PHPUnit (classic). Either is fine; Pest is the pleasant default.
-
----
-
-*This plan is a living document. Refine it freely — the point is to steer against it,
-not to treat it as fixed.*
+`unlisted` post state · admin UI for account creation · username change +
+redirects · tags/comments (comments → webmentions, above).
