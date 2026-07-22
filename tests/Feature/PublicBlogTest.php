@@ -88,6 +88,24 @@ test('the blog home paginates at 5 posts per page', function () {
     expect($page2->viewData('posts')->count())->toBe(1);
 });
 
+test('disabled pagination controls are hidden from AT, not given a prohibited aria-label', function () {
+    $author = author();
+    Post::factory()->for($author)->published()->count(6)->create(); // 2 pages at 5/page
+
+    // Page 1: "Previous" is disabled — no aria-label (it is prohibited on the
+    // generic <span>); the active "Next" link still carries its label on an <a>.
+    $this->get('/@brian')
+        ->assertOk()
+        ->assertDontSee('aria-label="Previous"', escape: false)
+        ->assertSee('aria-label="Next"', escape: false);
+
+    // Last page: "Next" is disabled; the active "Previous" link is labelled.
+    $this->get('/@brian?page=2')
+        ->assertOk()
+        ->assertDontSee('aria-label="Next"', escape: false)
+        ->assertSee('aria-label="Previous"', escape: false);
+});
+
 test('pagination only counts published posts', function () {
     $author = author();
     Post::factory()->for($author)->published()->count(3)->create();
