@@ -37,6 +37,17 @@ readonly BACKUP_SCRIPT="$HOME/scripts/backup-simpleblog.sh"
 # nightly file still being there after the next nightly run.
 readonly BACKUP_DIR="$HOME/backups/simpleblog"
 
+# Serialises deploys against each other. Pulled forward from a later phase: the
+# nightly backup timer fires at 03:30, and without a lock a deploy running in
+# that window cannot tell its own fresh snapshot from the timer's — the two are
+# minutes apart and both match the freshness check. Benign today, but not once
+# migrations run against the DB between snapshot and deploy.
+#
+# NOTE: backup-simpleblog.sh does not yet take this lock, so a deploy and the
+# nightly timer can still overlap. Making the backup script take it too is
+# tracked as follow-up work; this half stops two deploys colliding.
+readonly LOCKFILE="$HOME/.cache/simpleblog-deploy.lock"
+
 # --- Output helper -----------------------------------------------------------
 
 # log — timestamped, so the output doubles as a deploy record.
@@ -221,6 +232,17 @@ assert_clean_tree() {
 # assert_deployable — the preconditions that make a deploy safe to start. Called
 # after compute_drift() has populated the drift globals.
 assert_deployable() {
+    # A detached HEAD passes the clean-tree check (porcelain is empty) and would
+    # pass the post-pull SHA check too, because the pull really does move HEAD.
+    # But it moves the DETACHED head, leaving refs/heads/main behind — a deploy
+    # that reports success while silently corrupting the branch state. Assert we
+    # are on a branch, and on the right one.
+    local current_branch
+    current_branch="$(git symbolic-ref --quiet --short HEAD)" \
+        || die "live checkout is in detached HEAD state; check out $BRANCH before deploying"
+    [[ "$current_branch" == "$BRANCH" ]] \
+        || die "live checkout is on branch '$current_branch', expected '$BRANCH'; refusing to deploy"
+
     if [[ "$DIVERGED" == "yes" ]]; then
         log "DIVERGED: local HEAD ($OLD_SHA) is not an ancestor of $REMOTE/$BRANCH ($NEW_SHA)."
         log "The live checkout has commits the remote does not. A fast-forward is impossible."
@@ -252,15 +274,16 @@ run_backup() {
     # whose failure must absolutely stop the deploy.
     "$BACKUP_SCRIPT" || die "backup failed; NOT proceeding (no verified snapshot, so no safety net)"
 
-    # Recompute the nightly script's output path rather than parsing its stdout.
-    # Same date format, so the same filename — and a literal string comparison is
-    # easier to reason about than scraping a log line.
-    #
     # Find the file the backup just wrote: the newest dated snapshot. This
     # sidesteps having to predict the name the backup script chose (it reads its
-    # own clock, so a run near midnight can land on either date). The glob is
-    # anchored to the 10-char date form so it cannot match a -predeploy copy
-    # left by an earlier deploy. `ls -t` sorts newest-first.
+    # own clock, so a run near midnight can land on either date). `ls -t` sorts
+    # newest-first.
+    #
+    # The anchored glob is load-bearing, not cosmetic — do not loosen it to
+    # db-*.sqlite. Two reasons: (a) it excludes -predeploy copies, which cp -p
+    # gives a preserved mtime that could otherwise win the -t sort; (b) bash
+    # expands it into separate argv entries, so `ls` never parses a filename and
+    # a name containing whitespace or a newline cannot match the fixed date shape.
     local dated
     dated="$(ls -t "$BACKUP_DIR"/db-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9].sqlite 2>/dev/null | head -1)" \
         || die "could not list $BACKUP_DIR"
@@ -270,13 +293,26 @@ run_backup() {
     # Confirm it really is from this run, not a stale file from days ago. If the
     # backup script somehow exited 0 without writing, we must not mistake an old
     # snapshot for a fresh safety net.
-    if [[ -n "$(find "$dated" -mmin +5)" ]]; then
-        die "newest snapshot $dated is older than 5 minutes; the backup did not write a fresh file — refusing to proceed"
-    fi
+    #
+    # Phrased as "prove it is fresh, else die" rather than "prove it is stale,
+    # else proceed". The difference matters: `find` on a missing or unreadable
+    # path exits non-zero but prints NOTHING, so a stale-detecting test would
+    # read that empty output as "not stale" and let the deploy continue without
+    # a safety net. With -mmin -5 an error, a missing file, and a stale file all
+    # produce empty output, and all three stop the deploy.
+    local fresh
+    fresh="$(find "$dated" -mmin -5 -print 2>/dev/null)" \
+        || die "could not stat snapshot $dated; refusing to proceed"
+    [[ -n "$fresh" ]] \
+        || die "snapshot $dated is not from this run (not modified in the last 5 minutes); refusing to proceed"
 
     SNAPSHOT="$BACKUP_DIR/db-$(date '+%Y-%m-%d-%H%M%S')-predeploy.sqlite"
-    cp -p "$dated" "$SNAPSHOT" || die "could not create pre-deploy snapshot at $SNAPSHOT"
-    chmod 600 "$SNAPSHOT" || die "could not restrict permissions on $SNAPSHOT"
+    # install, not cp -p + chmod: it creates the file at mode 600 directly, so
+    # the snapshot (which contains password hashes) is never briefly readable at
+    # a wider mode. Not preserving mtime is deliberate — it keeps -predeploy
+    # copies from ever competing in the `ls -t` selection above.
+    install -m 600 "$dated" "$SNAPSHOT" \
+        || die "could not create pre-deploy snapshot at $SNAPSHOT"
 
     log "  snapshot: $SNAPSHOT"
 }
@@ -362,9 +398,22 @@ mode_dry_run() {
     log "DRY RUN complete. No changes were made."
 }
 
+# take_lock — refuse to run if another deploy holds the lock.
+#
+# fd 9 is held for the lifetime of the script; the kernel releases the lock when
+# the process exits, however it exits, so there is no stale-lock cleanup to get
+# wrong. -n means fail immediately rather than block: a deploy that silently
+# waits is worse than one that tells you to look at what else is running.
+take_lock() {
+    mkdir -p "$(dirname "$LOCKFILE")" || die "cannot create lock directory for $LOCKFILE"
+    exec 9>"$LOCKFILE" || die "cannot open lock file $LOCKFILE"
+    flock -n 9 || die "another deploy is already running (lock: $LOCKFILE); refusing to start a second"
+}
+
 # mode_deploy — the real thing. Phase 3 covers preconditions, backup and pull;
 # the remaining steps arrive in later phases.
 mode_deploy() {
+    take_lock
     assert_clean_tree
     compute_drift
     assert_deployable
