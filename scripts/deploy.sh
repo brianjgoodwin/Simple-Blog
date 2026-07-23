@@ -10,10 +10,11 @@
 # any failure the script STOPS and reports how to recover — it never auto-rolls-
 # back. See docs/deploy-script-plan.md for the full plan and resolved decisions.
 #
-# Built so far (Phases 1-3): skeleton, strict mode, arg parsing, --check and
-# --dry-run (both read-only), and the first half of the real deploy — verified DB
-# backup plus a fast-forward-only pull. Still to come: conditional composer /
-# migrate / build, service restart, HTTP verification, and locking.
+# Built so far (Phases 1-4): --check and --dry-run (read-only), and the mutating
+# deploy through to updated code, dependencies, schema and assets — verified DB
+# backup, fast-forward pull, conditional composer / migrate / build, and
+# optimize:clear, serialised by an flock. Still to come (Phase 5): restarting the
+# service and verifying end-to-end that the site actually serves a 200.
 
 set -euo pipefail
 
@@ -424,6 +425,99 @@ run_pull() {
     log "  now at: $now"
 }
 
+# run_composer — refresh PHP dependencies, only when composer.lock changed.
+#
+# --no-dev: the live box never runs the test suite (resolved decision — Pest
+# would truncate the production database), so dev dependencies are dead weight
+# and extra supply-chain surface.
+# --optimize-autoloader: builds a classmap, worth it for a long-lived process.
+# --no-interaction: this may run non-interactively; never block on a prompt.
+run_composer() {
+    if [[ "$DO_COMPOSER" != "run" ]]; then
+        log "Step: composer — SKIPPED ($REASON_COMPOSER)"
+        return 0
+    fi
+
+    log "Step: composer install ($REASON_COMPOSER)"
+    composer install --no-dev --optimize-autoloader --no-interaction \
+        || die "composer install failed; dependencies may be in a partial state"
+}
+
+# run_migrate — apply pending migrations. THE irreversible step.
+#
+# Two deliberate choices:
+#
+# 1. The decision to run comes from `migrate:status` here, NOT from the git diff
+#    that drove --dry-run. Before the pull, incoming migration files are the only
+#    honest predictor; after it, Laravel's own ledger is ground truth — it knows
+#    about migrations pending for reasons unrelated to this deploy.
+# 2. assert_snapshot_intact() runs immediately before, not merely earlier in the
+#    deploy. This is the last moment a snapshot can still save you.
+#
+# --force is required because APP_ENV=production; it suppresses the interactive
+# "are you sure" prompt, not any safety check.
+run_migrate() {
+    # Re-read from Laravel now that the new migration files are actually on disk.
+    # A failure here must not be read as "nothing pending" — if we cannot tell,
+    # we stop rather than skip the one step whose omission ships broken code.
+    local pending
+    pending="$(php artisan migrate:status --pending 2>&1)" \
+        || die "could not read migration status after the pull; refusing to guess whether migrations are pending"
+
+    # Verified against this Laravel version: with nothing pending the command
+    # still exits 0 and prints "INFO  No pending migrations."; with something
+    # pending it prints a table of migration names marked Pending. So emptiness
+    # is NOT the signal — match the explicit no-pending message instead.
+    if printf '%s' "$pending" | grep -qi 'No pending migrations'; then
+        log "Step: migrate — SKIPPED (Laravel reports no pending migrations after the pull)"
+        return 0
+    fi
+
+    # Anything unrecognised is treated as "there might be work", which fails
+    # toward running a no-op migrate rather than silently skipping a real one.
+    if ! printf '%s' "$pending" | grep -qi 'pending'; then
+        log "Step: migrate — unrecognised migrate:status output, treating as pending:"
+        printf '%s\n' "$pending" | sed 's/^/    /'
+    fi
+
+    log "Step: migrate (pending migrations found after the pull)"
+    log "  pending:"
+    printf '%s\n' "$pending" | sed 's/^/    /'
+
+    # The snapshot is the only way back from here. Prove it is still the exact
+    # file this run created before touching the schema.
+    assert_snapshot_intact
+    log "  snapshot verified intact: $SNAPSHOT"
+
+    php artisan migrate --force \
+        || die "migrate FAILED; the schema may be partially applied. Restore $SNAPSHOT (see docs/migrate-drill.md) — do NOT rely on migrate:rollback"
+}
+
+# run_build — rebuild front-end assets, only when resources/ changed.
+#
+# Runs after migrate so a schema failure stops the deploy before spending a
+# minute on Vite. Ordering within the mutating middle is otherwise arbitrary,
+# but backup-before-migrate is not — that one is the whole safety story.
+run_build() {
+    if [[ "$DO_BUILD" != "run" ]]; then
+        log "Step: build — SKIPPED ($REASON_BUILD)"
+        return 0
+    fi
+
+    log "Step: npm run build ($REASON_BUILD)"
+    npm run build \
+        || die "npm run build failed; public/build may hold a half-written manifest"
+}
+
+# run_optimize_clear — drop Laravel's compiled caches so the new code is what
+# actually runs. Unconditional: cheap, and the failure it prevents (stale
+# compiled views or config surviving a deploy) is confusing to diagnose.
+run_optimize_clear() {
+    log "Step: optimize:clear"
+    php artisan optimize:clear \
+        || die "optimize:clear failed; the app may still be serving cached views or config"
+}
+
 # --- Modes -------------------------------------------------------------------
 
 # mode_check — report drift and exit. Changes nothing.
@@ -520,14 +614,25 @@ mode_deploy() {
     # ref is only meaningful while HEAD is still the old commit.
     compute_decisions
 
+    # Order is the safety story, not a style choice:
+    #   backup  — before anything irreversible, so there is always a way back
+    #   pull    — new code on disk before anything reads it
+    #   composer— dependencies before code that might import them
+    #   migrate — schema after its code arrives; the irreversible step
+    #   build   — assets last of the mutating work; slow and easily redone
+    #   clear   — drop compiled caches so the new code is what actually runs
     run_backup
     run_pull
+    run_composer
+    run_migrate
+    run_build
+    run_optimize_clear
 
-    log "Phase 3 complete: backup taken and code updated to $NEW_SHA."
+    log "Phase 4 complete: code, dependencies, schema and assets are updated to $NEW_SHA."
     log "  snapshot     : $SNAPSHOT"
     log "  previous SHA : $OLD_SHA  (restore point)"
-    log "Still pending (later phases): composer=${DO_COMPOSER}, migrate=${DO_MIGRATE}, build=${DO_BUILD}, optimize:clear, restart, verify."
-    log "The service has NOT been restarted and assets have NOT been rebuilt — it is still serving the old build."
+    log "Still pending (Phase 5): service restart and end-to-end HTTP verification."
+    log "The service has NOT been restarted — it is still running the old process."
 }
 
 # --- Main --------------------------------------------------------------------
