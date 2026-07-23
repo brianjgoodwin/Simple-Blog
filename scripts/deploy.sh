@@ -25,7 +25,12 @@ readonly APP_DIR="/srv/www/simpleblog"
 
 # The branch we deploy from, and its remote.
 readonly REMOTE="origin"
-readonly BRANCH="main"
+
+# The branch a deploy uses unless --branch overrides it. Kept separate from
+# BRANCH so the override is always visibly a deviation from the default, and so
+# the summary can say which branch actually shipped.
+readonly DEFAULT_BRANCH="main"
+BRANCH="$DEFAULT_BRANCH"
 
 # The existing nightly backup script. We reuse it rather than reimplementing the
 # WAL-aware snapshot + integrity check — it is already the trusted path.
@@ -66,41 +71,65 @@ die() {
 
 usage() {
     cat <<'EOF'
-Usage: deploy.sh [--check | --dry-run | --help]
+Usage: deploy.sh [--check | --dry-run] [--branch <name>]
+       deploy.sh --help
 
-  (no flag)   Perform a deploy: verified DB backup, then fast-forward pull.
-              [partial — restart/build/migrate arrive in later phases]
-  --check     Report whether the live checkout has drifted behind the remote.
-              Read-only: changes nothing.
-  --dry-run   Show what a real deploy WOULD do, without doing it.
-              Read-only: changes nothing.
-  --help      Show this help.
+  (no flag)       Perform a deploy: verified DB backup, then fast-forward pull.
+                  [partial — restart/build/migrate arrive in later phases]
+  --check         Report whether the live checkout has drifted behind the remote.
+                  Read-only: changes nothing.
+  --dry-run       Show what a real deploy WOULD do, without doing it.
+                  Read-only: changes nothing.
+  --branch <name> Deploy from a branch other than main. For drills and testing
+                  only — see docs/migrate-drill.md. Prints a warning, and the
+                  branch must already exist on the remote.
+  --help          Show this help.
 
-The live checkout is /srv/www/simpleblog; it deploys from origin/main.
+The live checkout is /srv/www/simpleblog; it deploys from origin/main by default.
 EOF
 }
 
 # --- Argument parsing --------------------------------------------------------
 
-# Exactly one mode. Default (empty) means "real deploy", which isn't wired up
-# yet, so for now it's rejected with a clear message rather than doing nothing.
+# One mode per run; --branch may accompany any of them.
 MODE="deploy"
+MODE_SET="no"   # so a second mode flag is an error rather than silently winning
 
 parse_args() {
-    # Reject extra args first, so the "at most one flag" rule holds uniformly —
-    # including for --help, which would otherwise exit before this check.
-    if [[ $# -gt 1 ]]; then
-        usage >&2
-        die "too many arguments; expected at most one flag"
-    fi
-
-    case "${1:-}" in
-        --check)   MODE="check" ;;
-        --dry-run) MODE="dry-run" ;;
-        --help|-h) usage; exit 0 ;;
-        "")        MODE="deploy" ;;
-        *)         usage >&2; die "unknown argument: $1" ;;
-    esac
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --check|--dry-run)
+                [[ "$MODE_SET" == "no" ]] \
+                    || die "pick one mode: --check or --dry-run, not both"
+                MODE="${1#--}"
+                MODE_SET="yes"
+                shift
+                ;;
+            --branch)
+                # Requires a value. Without this guard, `--branch` as the last
+                # argument would consume nothing and silently deploy main.
+                [[ $# -ge 2 ]] || die "--branch requires a branch name"
+                BRANCH="$2"
+                [[ -n "$BRANCH" ]] || die "--branch requires a non-empty branch name"
+                # Reject anything that isn't a plausible ref name. The value is
+                # interpolated into git refs like "$REMOTE/$BRANCH", so keep it
+                # to a conservative character set rather than trusting the caller.
+                [[ "$BRANCH" =~ ^[A-Za-z0-9._/-]+$ ]] \
+                    || die "invalid branch name: '$BRANCH'"
+                [[ "$BRANCH" != -* ]] \
+                    || die "invalid branch name: '$BRANCH' (looks like a flag)"
+                shift 2
+                ;;
+            --help|-h)
+                usage
+                exit 0
+                ;;
+            *)
+                usage >&2
+                die "unknown argument: $1"
+                ;;
+        esac
+    done
 }
 
 # --- Preconditions -----------------------------------------------------------
@@ -112,6 +141,26 @@ assert_app_dir() {
     cd "$APP_DIR" || die "cannot cd into $APP_DIR"
     git rev-parse --is-inside-work-tree >/dev/null 2>&1 \
         || die "$APP_DIR is not a git working tree"
+}
+
+# warn_if_not_default_branch — deploying anything but main is a deliberate,
+# unusual act (drills, testing). Say so loudly and unmissably, every time, so it
+# can never happen by accident or go unnoticed in a scrollback.
+warn_if_not_default_branch() {
+    [[ "$BRANCH" != "$DEFAULT_BRANCH" ]] || return 0
+
+    log "!! ---------------------------------------------------------------"
+    log "!! NON-DEFAULT BRANCH: deploying '$BRANCH', not '$DEFAULT_BRANCH'."
+    log "!! This is for drills and testing. If you did not intend it, stop now."
+    log "!! ---------------------------------------------------------------"
+}
+
+# assert_branch_exists — fail early and clearly if the requested branch is not on
+# the remote. Without this the first symptom is a confusing error from
+# rev-parse deep inside compute_drift.
+assert_branch_exists() {
+    git ls-remote --exit-code --heads "$REMOTE" "$BRANCH" >/dev/null 2>&1 \
+        || die "branch '$BRANCH' does not exist on $REMOTE"
 }
 
 # --- Drift computation (shared, read-only) -----------------------------------
@@ -240,11 +289,20 @@ assert_deployable() {
     # But it moves the DETACHED head, leaving refs/heads/main behind — a deploy
     # that reports success while silently corrupting the branch state. Assert we
     # are on a branch, and on the right one.
+    #
+    # Note this deliberately does NOT switch branches for you. With --branch, the
+    # live checkout must already be on the branch you name. Having a deploy
+    # script silently `git checkout` the live site is a far worse failure mode
+    # than making you do it by hand and think about it.
     local current_branch
     current_branch="$(git symbolic-ref --quiet --short HEAD)" \
-        || die "live checkout is in detached HEAD state; check out $BRANCH before deploying"
-    [[ "$current_branch" == "$BRANCH" ]] \
-        || die "live checkout is on branch '$current_branch', expected '$BRANCH'; refusing to deploy"
+        || die "live checkout is in detached HEAD state; run 'git -C $APP_DIR checkout $BRANCH' first"
+    if [[ "$current_branch" != "$BRANCH" ]]; then
+        log "Live checkout is on '$current_branch' but the deploy targets '$BRANCH'."
+        log "This script will not switch branches for you. To proceed deliberately:"
+        log "  git -C $APP_DIR checkout $BRANCH"
+        die "branch mismatch; refusing to deploy"
+    fi
 
     if [[ "$DIVERGED" == "yes" ]]; then
         log "DIVERGED: local HEAD ($OLD_SHA) is not an ancestor of $REMOTE/$BRANCH ($NEW_SHA)."
@@ -477,6 +535,8 @@ mode_deploy() {
 main() {
     parse_args "$@"
     assert_app_dir
+    warn_if_not_default_branch
+    assert_branch_exists
 
     case "$MODE" in
         check)   mode_check ;;
