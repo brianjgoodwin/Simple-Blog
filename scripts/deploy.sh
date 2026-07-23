@@ -504,6 +504,15 @@ run_build() {
         return 0
     fi
 
+    # Compile every Blade template before building. Tailwind's content config
+    # scans the compiled-view directory, so without this it sees only whichever
+    # views happened to be cached and silently omits classes used elsewhere —
+    # measured at ~1KB of missing CSS on this app. view:cache makes the input
+    # complete and identical on every run.
+    log "Step: view:cache (populate compiled views so Tailwind sees every template)"
+    php artisan view:cache \
+        || die "view:cache failed; refusing to build assets from an incomplete template set"
+
     log "Step: npm run build ($REASON_BUILD)"
     npm run build \
         || die "npm run build failed; public/build may hold a half-written manifest"
@@ -619,14 +628,26 @@ mode_deploy() {
     #   pull    — new code on disk before anything reads it
     #   composer— dependencies before code that might import them
     #   migrate — schema after its code arrives; the irreversible step
+    #   clear   — drop stale compiled caches from the old code
     #   build   — assets last of the mutating work; slow and easily redone
-    #   clear   — drop compiled caches so the new code is what actually runs
+    #
+    # The clear/build ordering here is not arbitrary. tailwind.config.js scans
+    # './storage/framework/views/*.php' — the compiled Blade cache — so the CSS
+    # Tailwind emits depends on which views are compiled when it runs. Measured
+    # on this app: an empty or partial cache yields 43577 bytes of CSS, while a
+    # fully compiled one yields 44542. That ~1KB is utility classes used only by
+    # templates that were never compiled, and their absence means those pages
+    # render with styles missing.
+    #
+    # So the order is: clear the stale cache, recompile ALL views from the new
+    # code, then build against that complete input. run_build() does the
+    # recompile itself so the two stay together.
     run_backup
     run_pull
     run_composer
     run_migrate
-    run_build
     run_optimize_clear
+    run_build
 
     log "Phase 4 complete: code, dependencies, schema and assets are updated to $NEW_SHA."
     log "  snapshot     : $SNAPSHOT"
