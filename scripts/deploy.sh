@@ -213,6 +213,9 @@ compute_decisions() {
 # Populated by run_backup() so later steps and the failure report can name the
 # snapshot the operator would restore from.
 SNAPSHOT=""
+# Identity of that snapshot (inode, size, mtime) captured at creation, so the
+# irreversible steps can prove the file behind them is still the same one.
+SNAPSHOT_ID=""
 
 # assert_clean_tree — refuse to deploy over local modifications. A dirty live
 # checkout means someone edited files on the server; pulling on top of that
@@ -314,7 +317,35 @@ run_backup() {
     install -m 600 "$dated" "$SNAPSHOT" \
         || die "could not create pre-deploy snapshot at $SNAPSHOT"
 
+    # Record the snapshot's identity so the irreversible steps can prove they are
+    # still protected by THIS file. "Under five minutes old" is a heuristic that
+    # happens to be true of any recent snapshot, including one the nightly timer
+    # wrote moments earlier; inode + size + mtime identifies one specific file.
+    # Checked again by assert_snapshot_intact() immediately before migrate runs.
+    SNAPSHOT_ID="$(stat -c '%i %s %.9Y' "$SNAPSHOT")" \
+        || die "could not stat the pre-deploy snapshot at $SNAPSHOT"
+
     log "  snapshot: $SNAPSHOT"
+}
+
+# assert_snapshot_intact — re-verify the snapshot right before an irreversible
+# step. Called immediately ahead of migrate in Phase 4.
+#
+# Guards the window between taking the snapshot and using it: a concurrent prune,
+# a full disk, or a stray process could remove or rewrite the file, and a
+# migration that runs with no restorable snapshot behind it is the one situation
+# this whole script exists to prevent.
+assert_snapshot_intact() {
+    [[ -n "$SNAPSHOT" && -n "$SNAPSHOT_ID" ]] \
+        || die "internal error: no snapshot recorded before an irreversible step"
+    [[ -f "$SNAPSHOT" ]] \
+        || die "pre-deploy snapshot $SNAPSHOT has disappeared; refusing to continue"
+
+    local now
+    now="$(stat -c '%i %s %.9Y' "$SNAPSHOT")" \
+        || die "could not re-stat the pre-deploy snapshot $SNAPSHOT"
+    [[ "$now" == "$SNAPSHOT_ID" ]] \
+        || die "pre-deploy snapshot $SNAPSHOT changed since it was taken (was [$SNAPSHOT_ID], now [$now]); refusing to continue"
 }
 
 # run_pull — fast-forward the live checkout to the remote tip.
