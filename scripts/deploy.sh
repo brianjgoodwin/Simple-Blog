@@ -10,10 +10,10 @@
 # any failure the script STOPS and reports how to recover — it never auto-rolls-
 # back. See docs/deploy-script-plan.md for the full plan and resolved decisions.
 #
-# Built so far (Phases 1-2): skeleton, strict mode, arg parsing, --check (report
-# whether the live checkout has drifted behind origin/main), and --dry-run (show
-# what a real deploy WOULD do). Nothing here writes to disk, the database, or the
-# running service — the mutating deploy path lands in Phase 3 onward.
+# Built so far (Phases 1-3): skeleton, strict mode, arg parsing, --check and
+# --dry-run (both read-only), and the first half of the real deploy — verified DB
+# backup plus a fast-forward-only pull. Still to come: conditional composer /
+# migrate / build, service restart, HTTP verification, and locking.
 
 set -euo pipefail
 
@@ -26,6 +26,16 @@ readonly APP_DIR="/srv/www/simpleblog"
 # The branch we deploy from, and its remote.
 readonly REMOTE="origin"
 readonly BRANCH="main"
+
+# The existing nightly backup script. We reuse it rather than reimplementing the
+# WAL-aware snapshot + integrity check — it is already the trusted path.
+readonly BACKUP_SCRIPT="$HOME/scripts/backup-simpleblog.sh"
+
+# Where that script writes. It names its output db-<YYYY-MM-DD>.sqlite, i.e. date
+# only — so a second run on the same day OVERWRITES the first. That is why the
+# deploy takes its own separate -predeploy copy below rather than relying on the
+# nightly file still being there after the next nightly run.
+readonly BACKUP_DIR="$HOME/backups/simpleblog"
 
 # --- Output helper -----------------------------------------------------------
 
@@ -47,7 +57,8 @@ usage() {
     cat <<'EOF'
 Usage: deploy.sh [--check | --dry-run | --help]
 
-  (no flag)   Perform a deploy.        [built in later phases — not yet active]
+  (no flag)   Perform a deploy: verified DB backup, then fast-forward pull.
+              [partial — restart/build/migrate arrive in later phases]
   --check     Report whether the live checkout has drifted behind the remote.
               Read-only: changes nothing.
   --dry-run   Show what a real deploy WOULD do, without doing it.
@@ -180,6 +191,114 @@ compute_decisions() {
     fi
 }
 
+# --- Deploy steps (mutating) -------------------------------------------------
+#
+# Everything below this line can change the live site. Each step is written to
+# fail loudly: on any error the script exits non-zero via die() or errexit,
+# leaving the site in whatever state the last completed step produced. It never
+# attempts an automatic rollback (resolved decision #2) — see the recovery notes
+# printed on failure in Phase 6.
+
+# Populated by run_backup() so later steps and the failure report can name the
+# snapshot the operator would restore from.
+SNAPSHOT=""
+
+# assert_clean_tree — refuse to deploy over local modifications. A dirty live
+# checkout means someone edited files on the server; pulling on top of that
+# either fails or silently buries their work. Either way a human should look
+# first. --porcelain prints one line per change and nothing at all when clean.
+# Untracked files count: they can collide with incoming files and block the pull.
+assert_clean_tree() {
+    local dirty
+    dirty="$(git status --porcelain)" || die "git status failed"
+    if [[ -n "$dirty" ]]; then
+        log "Working tree is NOT clean:"
+        printf '%s\n' "$dirty"
+        die "refusing to deploy over local changes in $APP_DIR; commit, stash, or remove them first"
+    fi
+}
+
+# assert_deployable — the preconditions that make a deploy safe to start. Called
+# after compute_drift() has populated the drift globals.
+assert_deployable() {
+    if [[ "$DIVERGED" == "yes" ]]; then
+        log "DIVERGED: local HEAD ($OLD_SHA) is not an ancestor of $REMOTE/$BRANCH ($NEW_SHA)."
+        log "The live checkout has commits the remote does not. A fast-forward is impossible."
+        die "refusing to deploy a diverged checkout; reconcile $APP_DIR with $REMOTE/$BRANCH by hand"
+    fi
+
+    if ! [[ "$COMMITS_BEHIND" =~ ^[0-9]+$ ]]; then
+        die "internal error: commit count is not a number: '$COMMITS_BEHIND'"
+    fi
+}
+
+# run_backup — take a verified DB snapshot BEFORE any pull or migration.
+#
+# Two files result:
+#   1. The nightly script's own dated file (db-YYYY-MM-DD.sqlite). It does the
+#      WAL-aware .backup and the integrity check, and refuses to prune if the
+#      check fails — so a non-zero exit here means DO NOT PROCEED.
+#   2. A -predeploy copy stamped to the second. The dated file is overwritten by
+#      the next nightly run (and by any same-day deploy); this copy is the one
+#      that is still around tomorrow when you need it.
+run_backup() {
+    log "Step: backup (verified snapshot before any change)"
+
+    [[ -x "$BACKUP_SCRIPT" ]] \
+        || die "backup script not found or not executable: $BACKUP_SCRIPT"
+
+    # Runs the integrity check internally; a non-zero exit means the snapshot is
+    # untrustworthy. errexit would catch this, but be explicit — this is the step
+    # whose failure must absolutely stop the deploy.
+    "$BACKUP_SCRIPT" || die "backup failed; NOT proceeding (no verified snapshot, so no safety net)"
+
+    # Recompute the nightly script's output path rather than parsing its stdout.
+    # Same date format, so the same filename — and a literal string comparison is
+    # easier to reason about than scraping a log line.
+    #
+    # Find the file the backup just wrote: the newest dated snapshot. This
+    # sidesteps having to predict the name the backup script chose (it reads its
+    # own clock, so a run near midnight can land on either date). The glob is
+    # anchored to the 10-char date form so it cannot match a -predeploy copy
+    # left by an earlier deploy. `ls -t` sorts newest-first.
+    local dated
+    dated="$(ls -t "$BACKUP_DIR"/db-[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9].sqlite 2>/dev/null | head -1)" \
+        || die "could not list $BACKUP_DIR"
+    [[ -n "$dated" && -f "$dated" ]] \
+        || die "backup reported success but no snapshot found in $BACKUP_DIR; refusing to proceed"
+
+    # Confirm it really is from this run, not a stale file from days ago. If the
+    # backup script somehow exited 0 without writing, we must not mistake an old
+    # snapshot for a fresh safety net.
+    if [[ -n "$(find "$dated" -mmin +5)" ]]; then
+        die "newest snapshot $dated is older than 5 minutes; the backup did not write a fresh file — refusing to proceed"
+    fi
+
+    SNAPSHOT="$BACKUP_DIR/db-$(date '+%Y-%m-%d-%H%M%S')-predeploy.sqlite"
+    cp -p "$dated" "$SNAPSHOT" || die "could not create pre-deploy snapshot at $SNAPSHOT"
+    chmod 600 "$SNAPSHOT" || die "could not restrict permissions on $SNAPSHOT"
+
+    log "  snapshot: $SNAPSHOT"
+}
+
+# run_pull — fast-forward the live checkout to the remote tip.
+#
+# --ff-only is the safety property: if a fast-forward is not possible git exits
+# non-zero and changes nothing, rather than creating a merge commit on the live
+# box. assert_deployable() already rejects the diverged case with a clearer
+# message; this flag is the backstop if state changed since that check.
+run_pull() {
+    log "Step: pull ($OLD_SHA -> $NEW_SHA, fast-forward only)"
+    git pull --ff-only "$REMOTE" "$BRANCH" \
+        || die "git pull --ff-only failed; the checkout is unchanged at $OLD_SHA"
+
+    local now
+    now="$(git rev-parse --short HEAD)" || die "could not read HEAD after pull"
+    [[ "$now" == "$NEW_SHA" ]] \
+        || die "post-pull HEAD is $now but expected $NEW_SHA; stopping before any further change"
+    log "  now at: $now"
+}
+
 # --- Modes -------------------------------------------------------------------
 
 # mode_check — report drift and exit. Changes nothing.
@@ -243,6 +362,36 @@ mode_dry_run() {
     log "DRY RUN complete. No changes were made."
 }
 
+# mode_deploy — the real thing. Phase 3 covers preconditions, backup and pull;
+# the remaining steps arrive in later phases.
+mode_deploy() {
+    assert_clean_tree
+    compute_drift
+    assert_deployable
+
+    if (( COMMITS_BEHIND == 0 )); then
+        log "Up to date: live ($OLD_SHA) already matches $REMOTE/$BRANCH. Nothing to deploy."
+        return 0
+    fi
+
+    log "Deploying $COMMITS_BEHIND commit(s), $OLD_SHA -> $NEW_SHA."
+    log "Incoming commits:"
+    git --no-pager log --oneline "HEAD..$REMOTE/$BRANCH"
+
+    # Decide what the pull implies BEFORE pulling — the diff against the remote
+    # ref is only meaningful while HEAD is still the old commit.
+    compute_decisions
+
+    run_backup
+    run_pull
+
+    log "Phase 3 complete: backup taken and code updated to $NEW_SHA."
+    log "  snapshot     : $SNAPSHOT"
+    log "  previous SHA : $OLD_SHA  (restore point)"
+    log "Still pending (later phases): composer=${DO_COMPOSER}, migrate=${DO_MIGRATE}, build=${DO_BUILD}, optimize:clear, restart, verify."
+    log "The service has NOT been restarted and assets have NOT been rebuilt — it is still serving the old build."
+}
+
 # --- Main --------------------------------------------------------------------
 
 main() {
@@ -252,7 +401,7 @@ main() {
     case "$MODE" in
         check)   mode_check ;;
         dry-run) mode_dry_run ;;
-        deploy)  die "the real deploy path is not implemented yet (later phase); use --check or --dry-run for now" ;;
+        deploy)  mode_deploy ;;
         *)       die "internal error: unknown mode '$MODE'" ;;
     esac
 }
