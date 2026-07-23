@@ -10,11 +10,11 @@
 # any failure the script STOPS and reports how to recover — it never auto-rolls-
 # back. See docs/deploy-script-plan.md for the full plan and resolved decisions.
 #
-# Built so far (Phases 1-4): --check and --dry-run (read-only), and the mutating
-# deploy through to updated code, dependencies, schema and assets — verified DB
-# backup, fast-forward pull, conditional composer / migrate / build, and
-# optimize:clear, serialised by an flock. Still to come (Phase 5): restarting the
-# service and verifying end-to-end that the site actually serves a 200.
+# Complete (Phases 1-5): --check and --dry-run (read-only), and the full mutating
+# deploy — verified DB backup, fast-forward pull, conditional composer / migrate
+# / build, optimize:clear, service restart, and an end-to-end HTTP check that the
+# public site really returns 200 before success is declared. Serialised by flock.
+# Phase 6 (richer stop-and-alert reporting) is still to come.
 
 set -euo pipefail
 
@@ -42,6 +42,24 @@ readonly BACKUP_SCRIPT="$HOME/scripts/backup-simpleblog.sh"
 # deploy takes its own separate -predeploy copy below rather than relying on the
 # nightly file still being there after the next nightly run.
 readonly BACKUP_DIR="$HOME/backups/simpleblog"
+
+# The systemd --user unit that serves the site.
+readonly SERVICE="simple-blog.service"
+
+# Verification target. Deliberately the PUBLIC URL, not http://127.0.0.1:8001.
+# `php artisan serve` rejects a request whose Host header does not match and
+# returns 400, so a localhost check would fail on a perfectly healthy deploy.
+# Going through Caddy also exercises what a visitor actually gets: TLS, the
+# reverse proxy, and the app together. Measured behaviour: healthy site returns
+# 200; app stopped returns 502 from Caddy.
+readonly VERIFY_URL="https://simpleblog.brianjgoodwin.dev/"
+
+# Restart readiness. The unit is Type=simple, so systemd reports it active the
+# instant the process spawns — well before PHP is listening. Measured ready time
+# on this box is ~720ms, so poll rather than sleeping a fixed pessimistic amount.
+readonly VERIFY_ATTEMPTS=20
+readonly VERIFY_INTERVAL=0.5
+readonly VERIFY_TIMEOUT=5
 
 # Serialises deploys against each other. Pulled forward from a later phase: the
 # nightly backup timer fires at 03:30, and without a lock a deploy running in
@@ -75,8 +93,8 @@ usage() {
 Usage: deploy.sh [--check | --dry-run] [--branch <name>]
        deploy.sh --help
 
-  (no flag)       Perform a deploy: verified DB backup, then fast-forward pull.
-                  [partial — restart/build/migrate arrive in later phases]
+  (no flag)       Perform a full deploy: verified DB backup, fast-forward pull,
+                  conditional composer/migrate/build, restart, and verify 200.
   --check         Report whether the live checkout has drifted behind the remote.
                   Read-only: changes nothing.
   --dry-run       Show what a real deploy WOULD do, without doing it.
@@ -245,10 +263,14 @@ compute_decisions() {
         DO_MIGRATE="skip"; REASON_MIGRATE="no new migration files incoming"
     fi
 
-    if _paths_changed resources/; then
-        DO_BUILD="run";  REASON_BUILD="files under resources/ changed"
+    # Watching resources/ alone is not enough: a Tailwind or Vite config change,
+    # or a JS dependency bump, changes the built output just as surely and would
+    # otherwise ship stale assets with no warning.
+    if _paths_changed resources/ package.json package-lock.json \
+                      vite.config.js tailwind.config.js postcss.config.js; then
+        DO_BUILD="run";  REASON_BUILD="assets, build config or JS dependencies changed"
     else
-        DO_BUILD="skip"; REASON_BUILD="nothing under resources/ changed"
+        DO_BUILD="skip"; REASON_BUILD="nothing affecting the asset build changed"
     fi
 }
 
@@ -266,6 +288,10 @@ SNAPSHOT=""
 # Identity of that snapshot (inode, size, mtime) captured at creation, so the
 # irreversible steps can prove the file behind them is still the same one.
 SNAPSHOT_ID=""
+
+# Value of $SECONDS when the mutating work began, for the elapsed-time line in
+# the summary. ($SECONDS is a bash builtin counting from shell start.)
+DEPLOY_START=0
 
 # assert_clean_tree — refuse to deploy over local modifications. A dirty live
 # checkout means someone edited files on the server; pulling on top of that
@@ -493,11 +519,14 @@ run_migrate() {
         || die "migrate FAILED; the schema may be partially applied. Restore $SNAPSHOT (see docs/migrate-drill.md) — do NOT rely on migrate:rollback"
 }
 
-# run_build — rebuild front-end assets, only when resources/ changed.
+# run_build — rebuild front-end assets, when anything affecting them changed.
 #
 # Runs after migrate so a schema failure stops the deploy before spending a
 # minute on Vite. Ordering within the mutating middle is otherwise arbitrary,
 # but backup-before-migrate is not — that one is the whole safety story.
+#
+# Three steps, in this order: compile every template (so Tailwind sees them all),
+# install exactly the lockfile, then build.
 run_build() {
     if [[ "$DO_BUILD" != "run" ]]; then
         log "Step: build — SKIPPED ($REASON_BUILD)"
@@ -513,6 +542,21 @@ run_build() {
     php artisan view:cache \
         || die "view:cache failed; refusing to build assets from an incomplete template set"
 
+    # Install exactly the lockfile before building. Without this the build uses
+    # whatever node_modules a past manual install happened to leave behind, so a
+    # dependency bump in package-lock.json would produce assets built from the
+    # OLD tree — the same silent drift this whole script exists to prevent.
+    #
+    # `ci` not `install`: it installs the lockfile exactly and errors if
+    # package.json and the lock disagree, rather than quietly resolving.
+    # --ignore-scripts is the supply-chain boundary: install-time lifecycle
+    # scripts are the vector in most real npm compromises. .npmrc already sets
+    # it, but stating it here means the boundary does not depend on a config
+    # file that a stray `npm config set` could change.
+    log "Step: npm ci (install exactly package-lock.json)"
+    npm ci --ignore-scripts \
+        || die "npm ci failed; node_modules may be in a partial state"
+
     log "Step: npm run build ($REASON_BUILD)"
     npm run build \
         || die "npm run build failed; public/build may hold a half-written manifest"
@@ -525,6 +569,63 @@ run_optimize_clear() {
     log "Step: optimize:clear"
     php artisan optimize:clear \
         || die "optimize:clear failed; the app may still be serving cached views or config"
+
+    # optimize:clear includes view:clear, which empties the very directory
+    # tailwind.config.js scans. Leaving it empty means the NEXT deploy's build
+    # starts from an incomplete template set — the ~1KB-of-missing-CSS bug again.
+    # Repopulating here also means the app serves precompiled views rather than
+    # compiling each one on its first request.
+    log "  repopulating the compiled view cache"
+    php artisan view:cache \
+        || die "view:cache failed after optimize:clear; the next build would see an incomplete template set"
+}
+
+# run_restart — restart the service so the new code is actually running.
+#
+# Unconditional: PHP's built-in server holds compiled state in the process, so
+# skipping the restart is how you get a deploy that reports success while the
+# old code keeps serving.
+run_restart() {
+    log "Step: restart $SERVICE"
+    systemctl --user restart "$SERVICE" \
+        || die "failed to restart $SERVICE; the site may be DOWN — check 'systemctl --user status $SERVICE'"
+
+    # is-active is necessary but nowhere near sufficient (Type=simple reports
+    # active immediately). The HTTP check below is what actually proves anything.
+    local state
+    state="$(systemctl --user is-active "$SERVICE" 2>/dev/null)" || state="unknown"
+    log "  unit state: $state"
+    [[ "$state" == "active" ]] \
+        || die "$SERVICE is '$state' after restart; the site is probably DOWN"
+}
+
+# run_verify — prove the site actually serves before declaring success.
+#
+# This is the step that makes "the deploy finished" and "the deploy worked" the
+# same claim. It retries because the restart above returns before PHP is ready;
+# a single immediate curl would fail on a healthy deploy.
+run_verify() {
+    log "Step: verify $VERIFY_URL"
+
+    local attempt code
+    for (( attempt = 1; attempt <= VERIFY_ATTEMPTS; attempt++ )); do
+        # curl's own exit status is ignored on purpose: a connection refused
+        # mid-warmup is expected, and %{http_code} is 000 in that case, which
+        # simply fails the comparison below and retries.
+        code="$(curl -s -o /dev/null -w '%{http_code}' --max-time "$VERIFY_TIMEOUT" "$VERIFY_URL" 2>/dev/null)" || code="000"
+
+        if [[ "$code" == "200" ]]; then
+            log "  HTTP 200 after $attempt attempt(s)"
+            return 0
+        fi
+
+        sleep "$VERIFY_INTERVAL"
+    done
+
+    # Out of attempts. Say what was seen — 502 means Caddy is up but the app is
+    # not answering, which points somewhere different than a 500 from the app.
+    log "  last HTTP status: $code"
+    die "verification FAILED: $VERIFY_URL did not return 200 after $VERIFY_ATTEMPTS attempts. The site may be serving errors — snapshot: $SNAPSHOT, previous commit: $OLD_SHA"
 }
 
 # --- Modes -------------------------------------------------------------------
@@ -602,9 +703,10 @@ take_lock() {
     flock -n 9 || die "another deploy is already running (lock: $LOCKFILE); refusing to start a second"
 }
 
-# mode_deploy — the real thing. Phase 3 covers preconditions, backup and pull;
-# the remaining steps arrive in later phases.
+# mode_deploy — the real thing, end to end: preconditions, backup, pull, the
+# conditional middle, restart, and verification that the site actually serves.
 mode_deploy() {
+    DEPLOY_START=$SECONDS
     take_lock
     assert_clean_tree
     compute_drift
@@ -649,11 +751,34 @@ mode_deploy() {
     run_optimize_clear
     run_build
 
-    log "Phase 4 complete: code, dependencies, schema and assets are updated to $NEW_SHA."
+    # Restart last, then prove it works. Everything above changed files on disk;
+    # until the service restarts, the running process is still the old code.
+    run_restart
+    run_verify
+
+    print_summary
+}
+
+# print_summary — the final record. Deliberately restates what ran and what was
+# skipped: a silent skip that looks like success is the failure mode this whole
+# script was written to avoid.
+print_summary() {
+    local subject elapsed
+    subject="$(git --no-pager log -1 --format='%s' HEAD 2>/dev/null)" || subject="(unknown)"
+    elapsed=$(( SECONDS - DEPLOY_START ))
+
+    log "-------------------------------------------------------------"
+    log "DEPLOY OK — $VERIFY_URL returned 200"
+    log "  branch       : $BRANCH"
+    log "  shipped      : $NEW_SHA  $subject"
+    log "  previous     : $OLD_SHA  (restore point)"
+    log "  commits      : $COMMITS_BEHIND"
+    log "  composer     : $DO_COMPOSER  ($REASON_COMPOSER)"
+    log "  migrate      : see the migrate step above (decided from migrate:status after the pull)"
+    log "  build        : $DO_BUILD  ($REASON_BUILD)"
     log "  snapshot     : $SNAPSHOT"
-    log "  previous SHA : $OLD_SHA  (restore point)"
-    log "Still pending (Phase 5): service restart and end-to-end HTTP verification."
-    log "The service has NOT been restarted — it is still running the old process."
+    log "  elapsed      : ${elapsed}s"
+    log "-------------------------------------------------------------"
 }
 
 # --- Main --------------------------------------------------------------------
